@@ -132,7 +132,12 @@ class FlowRunner:
             self._log(f"Página inicial: {start_url}")
             auditor.check_page(page, 0)
 
+            superseded = self._superseded_steps(actions)
+
             for index, action in enumerate(actions, start=1):
+                if index in superseded:
+                    result.steps_run = index
+                    continue
                 auditor.current_step = index
                 stopped_at = self._run_action(page, action, index, settings)
                 if stopped_at:
@@ -218,6 +223,34 @@ class FlowRunner:
 
         self._log(f"Paso {sequence}: {description}")
         return None
+
+    @staticmethod
+    def _superseded_steps(actions: list[dict]) -> set[int]:
+        """
+        Pasos de escritura que el siguiente paso reemplaza.
+
+        El grabador guarda un evento por tecla ("s", "sm", "smi"...). Basta
+        con escribir el último valor de cada campo.
+        """
+
+        superseded = set()
+        for index, (action, following) in enumerate(zip(actions, actions[1:]), start=1):
+            if (
+                action.get("action_type") == "input"
+                and following.get("action_type") in {"input", "change"}
+                and FlowRunner._same_element(action, following)
+            ):
+                superseded.add(index)
+        return superseded
+
+    @staticmethod
+    def _same_element(first: dict, second: dict) -> bool:
+        first_element = first.get("element") or {}
+        second_element = second.get("element") or {}
+        for key in ("selector", "id", "name"):
+            if first_element.get(key) or second_element.get(key):
+                return first_element.get(key) == second_element.get(key)
+        return False
 
     @staticmethod
     def _blocked_step(

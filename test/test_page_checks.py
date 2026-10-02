@@ -62,7 +62,11 @@ class PageAuditorTests(unittest.TestCase):
         self.auditor.attach(self.page)
 
     def test_safe_url_removes_query_values(self):
-        self.assertEqual(safe_url("https://a.test/x?email=a@b.test#f"), "https://a.test/x?…")
+        self.assertEqual(safe_url("https://a.test/x?email=a@b.test#f"), "https://a.test/x?email=…")
+        self.assertEqual(
+            safe_url("https://a.test/wp-admin/admin-ajax.php?action=usil_consultar_cupos&nonce=abc"),
+            "https://a.test/wp-admin/admin-ajax.php?action=usil_consultar_cupos&nonce=…",
+        )
         self.assertEqual(safe_url("https://a.test/x"), "https://a.test/x")
 
     def test_records_only_console_errors_and_skips_ignored_sources(self):
@@ -75,8 +79,8 @@ class PageAuditorTests(unittest.TestCase):
         self.assertEqual(len(self.auditor.console_errors), 1)
         error = self.auditor.console_errors[0]
         self.assertEqual(error["step"], 2)
-        self.assertEqual(error["page"], "https://sitio.test/checkout?…")
-        self.assertEqual(error["source"], "https://sitio.test/app.js?…")
+        self.assertEqual(error["page"], "https://sitio.test/checkout?email=…")
+        self.assertEqual(error["source"], "https://sitio.test/app.js?v=…")
 
     def test_records_http_errors_and_real_request_failures(self):
         self.page.handlers["response"](response(200, "https://sitio.test/ok"))

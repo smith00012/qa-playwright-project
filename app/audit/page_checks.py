@@ -1,5 +1,5 @@
 from typing import Callable, Optional
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 from playwright.sync_api import Error as PlaywrightError
 
@@ -7,6 +7,8 @@ from app.automation.run_settings import RunSettings
 
 
 LOAD_TIMEOUT_MS = 15000
+# Parámetros que identifican el endpoint (no datos personales) y se conservan.
+KEPT_QUERY_VALUES = ("action", "wc-ajax")
 MAX_AXE_TARGETS = 3
 # Cancelaciones normales al navegar, según Chromium, Firefox y WebKit.
 IGNORED_REQUEST_FAILURES = ("net::ERR_ABORTED", "NS_BINDING_ABORTED", "Load request cancelled")
@@ -42,11 +44,22 @@ async () => {
 
 
 def safe_url(url: str) -> str:
-    """Quita query y fragmento: pueden llevar correos, tokens u otros datos."""
+    """
+    Quita los valores de la query y el fragmento: pueden llevar correos,
+    tokens u otros datos. Conserva los nombres de los parámetros y el
+    valor de los que identifican el endpoint (por ejemplo action en
+    admin-ajax.php).
+    """
 
     parts = urlsplit(url or "")
     base = f"{parts.scheme}://{parts.netloc}{parts.path}" if parts.scheme else url
-    return f"{base}?…" if parts.query else base
+    if not parts.query:
+        return base
+    params = [
+        f"{key}={value}" if key in KEPT_QUERY_VALUES else f"{key}=…"
+        for key, value in parse_qsl(parts.query, keep_blank_values=True)
+    ]
+    return f"{base}?{'&'.join(params) or '…'}"
 
 
 class PageAuditor:

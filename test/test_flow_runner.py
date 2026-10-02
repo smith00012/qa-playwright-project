@@ -123,6 +123,19 @@ class FlowRunnerActionTests(unittest.TestCase):
 
         self.assertFalse(any("clave-qa" in message for message in self.messages))
 
+    def test_only_last_keystroke_of_each_field_is_replayed(self):
+        email = {"selector": "#billing_email", "name": "billing_email"}
+        actions = [
+            {"action_type": "click", "element": email},
+            {"action_type": "input", "element": email, "value": "s"},
+            {"action_type": "input", "element": email, "value": "sm"},
+            {"action_type": "change", "element": email, "value": "sm"},
+            {"action_type": "input", "element": {"selector": "#phone"}, "value": "9"},
+            {"action_type": "input", "element": {"selector": "#city"}, "value": "lima"},
+        ]
+
+        self.assertEqual(FlowRunner._superseded_steps(actions), {2, 3})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -446,7 +446,10 @@ class BrowserRecorder:
                                     type: type,
                                     element:
                                         getElementInfo(element),
-                                    value: value
+                                    value: value,
+                                    // URL al momento del evento: al
+                                    // procesarlo, un clic ya pudo navegar.
+                                    url: window.location.href
                                 });
                             }
 
@@ -750,7 +753,7 @@ class BrowserRecorder:
                 timespec="seconds"
             ),
 
-            url=self.page.url if self.page else "",
+            url=event.get("url") or (self.page.url if self.page else ""),
 
             element=element,
 
