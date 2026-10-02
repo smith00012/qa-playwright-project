@@ -6,8 +6,11 @@
   "ambientes": {
     "pruebas": {
       "campos": {
-        "billing_email": "cuenta.qa@example.com",
-        "password": "env:QA_PASSWORD_PRUEBAS"
+        "billing_email": "cuenta.qa@usil.edu.pe",
+        "password": "env:QA_PASSWORD_PRUEBAS",
+        "cardnumber": "NUMERO_DE_TARJETA_DE_PRUEBA",
+        "exp-date": "MM/AA",
+        "cvc": "CVV_DE_PRUEBA"
       }
     }
   }
