@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 import json
@@ -5,6 +6,7 @@ import queue
 import re
 import threading
 import tkinter as tk
+import webbrowser
 from tkinter import ttk
 
 from app.automation.browser_options import BROWSERS, DESKTOP, DEVICE_PRESETS, BrowserOptions
@@ -64,6 +66,7 @@ class MainWindow:
         self.active_matrix_case: MatrixCase | None = None
         self.overwrite_matrix_case = False
         self._saved_flow_map: dict[str, Path] = {}
+        self.flow_running = False
         self.report_folder = DEFAULT_PATHS.test_cases_dir
         self.report_name: str | None = None
         self.current_report_folder = self.report_folder
@@ -467,7 +470,18 @@ class MainWindow:
             activebackground=self.COLORS["panel"],
         ).pack(side=tk.LEFT)
 
-        replay_button = tk.Button(
+        self.trace_var = tk.BooleanVar(value=self._default_trace())
+        tk.Checkbutton(
+            browser_row,
+            text="Guardar traza (más lento)",
+            variable=self.trace_var,
+            font=("Segoe UI", 8),
+            fg=self.COLORS["text"],
+            bg=self.COLORS["panel"],
+            activebackground=self.COLORS["panel"],
+        ).pack(side=tk.LEFT, padx=(8, 0))
+
+        self.replay_button = tk.Button(
             saved_flows_panel,
             text="▶ REPRODUCIR FLUJO SELECCIONADO",
             command=self.run_selected_flow,
@@ -481,7 +495,7 @@ class MainWindow:
             padx=15,
             pady=9,
         )
-        replay_button.pack(anchor=tk.W, padx=12, pady=(0, 12))
+        self.replay_button.pack(anchor=tk.W, padx=12, pady=(0, 12))
 
         status_bar = tk.Frame(
             content,
@@ -1277,8 +1291,12 @@ class MainWindow:
             )
 
     def _run_flow_file(self, flow_file: Path) -> None:
+        if self.flow_running:
+            self._log("Ya hay una reproducción en curso. Espere a que termine.")
+            return
+        self.flow_running = True
         self.latest_flow_path = flow_file
-        self.run_flow_button.config(state=tk.DISABLED)
+        self._set_replay_buttons_state(tk.DISABLED)
         self._log(f"Iniciando reproducción: {flow_file}")
 
         browser_options = BrowserOptions(
@@ -1289,7 +1307,7 @@ class MainWindow:
 
         worker = threading.Thread(
             target=self._run_flow_worker,
-            args=(flow_file, self.environment_var.get(), browser_options),
+            args=(flow_file, self.environment_var.get(), browser_options, self.trace_var.get()),
             daemon=True
         )
         worker.start()
@@ -1299,19 +1317,34 @@ class MainWindow:
         flow_file: Path,
         environment: str,
         browser_options: BrowserOptions,
+        trace: bool,
     ) -> None:
+        runner = FlowRunner(self._recorder_log, browser_options=browser_options)
         try:
-            settings = load_run_settings(environment, DEFAULT_PATHS)
-            FlowRunner(
-                self._recorder_log,
-                settings=settings,
-                browser_options=browser_options,
-            ).run(flow_file)
+            runner.settings = replace(
+                load_run_settings(environment, DEFAULT_PATHS),
+                trace=trace,
+            )
+            runner.run(flow_file)
         except Exception as error:
             self._log(f"Error ejecutando flujo: {error}")
         finally:
-            self.root.after(
-                0,
-                lambda: self.run_flow_button.config(state=tk.NORMAL)
-            )
+            report_file = runner.last_result.report_file if runner.last_result else None
+            self.root.after(0, lambda: self._finish_flow_run(report_file))
+
+    def _default_trace(self) -> bool:
+        try:
+            return load_run_settings(paths=DEFAULT_PATHS).trace
+        except (OSError, ValueError):
+            return False
+
+    def _finish_flow_run(self, report_file: str | None) -> None:
+        self.flow_running = False
+        self._set_replay_buttons_state(tk.NORMAL)
+        if report_file and Path(report_file).exists():
+            webbrowser.open(Path(report_file).resolve().as_uri())
+
+    def _set_replay_buttons_state(self, state: str) -> None:
+        self.run_flow_button.config(state=state)
+        self.replay_button.config(state=state)
 

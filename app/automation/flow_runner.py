@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +18,7 @@ from app.automation.run_settings import (
     matching_blocked_step,
 )
 from app.config import AppPaths, DEFAULT_PATHS
+from app.reporting.run_report import REPORT_FILENAME, RunReportGenerator
 
 
 MASKED_VALUE = "[MASKED]"
@@ -52,6 +54,12 @@ class FlowRunResult:
     stopped_at: str | None = None
     error: str | None = None
     findings: dict | None = None
+    started_at: str | None = None
+    duration_s: float | None = None
+    failed_step: int | None = None
+    failed_action: str | None = None
+    screenshot: str | None = None
+    report_file: str | None = None
 
 
 class FlowRunner:
@@ -68,6 +76,7 @@ class FlowRunner:
         self.settings = settings
         self.paths = paths
         self.browser_options = browser_options or BrowserOptions()
+        self.last_result: FlowRunResult | None = None
 
     def _log(self, message: str) -> None:
         if self.log_callback:
@@ -101,7 +110,11 @@ class FlowRunner:
             steps_run=0,
             total_steps=len(actions),
             run_folder=str(run_folder),
+            started_at=datetime.now().isoformat(timespec="seconds"),
         )
+        self.last_result = result
+        started = time.monotonic()
+        current_step = 0
 
         self._log(f"Abriendo flujo: {flow_file}")
         self._log_settings(settings)
@@ -112,6 +125,7 @@ class FlowRunner:
         context = None
         tracing = False
         auditor = PageAuditor(settings, self._log)
+        page = None
 
         try:
             browser = self._launch_browser(playwright, options)
@@ -130,7 +144,7 @@ class FlowRunner:
             auditor.attach(page)
             page.goto(start_url, wait_until="domcontentloaded")
             self._log(f"Página inicial: {start_url}")
-            auditor.check_page(page, 0)
+            self._check_page(auditor, page, 0, run_folder)
 
             superseded = self._superseded_steps(actions)
 
@@ -139,13 +153,15 @@ class FlowRunner:
                     result.steps_run = index
                     continue
                 auditor.current_step = index
+                current_step = index
                 stopped_at = self._run_action(page, action, index, settings)
                 if stopped_at:
                     result.status = STATUS_STOPPED
                     result.stopped_at = stopped_at
+                    result.screenshot = self._screenshot(page, run_folder, "detenido.png")
                     break
                 result.steps_run = index
-                auditor.check_page(page, index)
+                self._check_page(auditor, page, index, run_folder)
 
             if result.status == STATUS_COMPLETED:
                 self._log("Flujo ejecutado correctamente.")
@@ -153,6 +169,12 @@ class FlowRunner:
         except Exception as error:
             result.status = STATUS_FAILED
             result.error = str(error)
+            if current_step:
+                result.failed_step = current_step
+                failed = actions[current_step - 1]
+                result.failed_action = failed.get("description") or self._describe(failed)
+            if page:
+                result.screenshot = self._screenshot(page, run_folder, "fallo.png")
             raise
 
         finally:
@@ -162,9 +184,12 @@ class FlowRunner:
                 browser.close()
             playwright.stop()
             result.findings = auditor.summary()
+            result.duration_s = round(time.monotonic() - started, 1)
+            result.report_file = str(run_folder / REPORT_FILENAME)
             self._save_json(run_folder / "findings.json", auditor.to_dict())
             self._save_result(run_folder, result)
             self._log_findings(result.findings)
+            self._write_report(run_folder, result)
             self._log("Navegador del flujo cerrado.")
 
         return result
@@ -223,6 +248,44 @@ class FlowRunner:
 
         self._log(f"Paso {sequence}: {description}")
         return None
+
+    def _check_page(self, auditor: PageAuditor, page, step: int, run_folder: Path) -> None:
+        page_result = auditor.check_page(page, step)
+        if page_result is not None:
+            page_result["screenshot"] = self._screenshot(
+                page, run_folder, f"pantalla_{step:03d}.png"
+            )
+
+    def _screenshot(self, page, run_folder: Path, filename: str) -> str | None:
+        try:
+            page.screenshot(path=str(run_folder / filename), timeout=10000)
+        except PlaywrightError as error:
+            self._log(f"No se pudo tomar la captura {filename}: {error}")
+            return None
+        return filename
+
+    def _write_report(self, run_folder: Path, result: FlowRunResult) -> None:
+        try:
+            report_file = RunReportGenerator().generate(run_folder)
+        except Exception as error:  # el reporte no debe ocultar el resultado
+            result.report_file = None
+            self._save_result(run_folder, result)
+            self._log(f"No se pudo generar el reporte HTML: {error}")
+            return
+        self._log(f"Reporte HTML: {report_file}")
+
+    @staticmethod
+    def _describe(action: dict) -> str:
+        element = action.get("element") or {}
+        target = (
+            element.get("text")
+            or element.get("aria_label")
+            or element.get("name")
+            or element.get("id")
+            or element.get("selector")
+            or ""
+        )
+        return f"{action.get('action_type')} {target}".strip()
 
     @staticmethod
     def _superseded_steps(actions: list[dict]) -> set[int]:
@@ -306,6 +369,7 @@ class FlowRunner:
 
     def _stop_tracing(self, context, run_folder: Path) -> str | None:
         trace_file = run_folder / "trace.zip"
+        self._log("Guardando la traza; en sitios grandes puede tardar unos minutos...")
         try:
             context.tracing.stop(path=str(trace_file))
         except Exception as error:

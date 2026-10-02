@@ -41,7 +41,13 @@ class RunSettingsTests(unittest.TestCase):
 
         self.assertTrue(settings.stop_guard)
         self.assertEqual(settings.blocked_steps, ())
+        self.assertFalse(settings.trace)
         self.assertEqual(list_environments(self.paths), [])
+
+    def test_trace_is_enabled_only_explicitly(self):
+        self._write(self.paths.run_config_file, {"trazas": True})
+
+        self.assertTrue(load_run_settings(paths=self.paths).trace)
 
     def test_guard_stays_active_without_environment_or_with_unknown_one(self):
         self._write(self.paths.run_config_file, RUN_CONFIG)

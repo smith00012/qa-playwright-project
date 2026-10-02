@@ -1,5 +1,5 @@
 {
-  "trazas": true,
+  "trazas": false,
   "pasos_bloqueados": [
     "Continuar al pago"
   ],

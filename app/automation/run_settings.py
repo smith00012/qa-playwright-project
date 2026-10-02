@@ -20,7 +20,7 @@ class RunSettings:
     stop_guard: bool = True
     blocked_steps: tuple[str, ...] = ()
     test_data: dict[str, str] = field(default_factory=dict)
-    trace: bool = True
+    trace: bool = False
     accessibility: bool = True
     ignore_patterns: tuple[str, ...] = ()
     slow_load_ms: int = DEFAULT_SLOW_LOAD_MS
@@ -69,7 +69,9 @@ def load_run_settings(
         stop_guard=stop_guard,
         blocked_steps=tuple(str(step) for step in blocked_steps if str(step).strip()),
         test_data={str(key): str(value) for key, value in test_data.items()},
-        trace=config.get("trazas", True) is not False,
+        # La traza es opcional: en sitios grandes guardarla puede tardar
+        # varios minutos, y el reporte ya incluye capturas de cada pantalla.
+        trace=config.get("trazas", False) is True,
         accessibility=checks.get("accesibilidad", True) is not False,
         ignore_patterns=tuple(str(item) for item in checks.get("ignorar", []) if str(item).strip()),
         slow_load_ms=int(checks.get("carga_lenta_ms", DEFAULT_SLOW_LOAD_MS)),

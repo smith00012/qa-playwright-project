@@ -48,6 +48,7 @@ data/
 - Cambiar freno de pago, ambientes o datos de prueba: `app/automation/run_settings.py`.
 - Cambiar las revisiones por pantalla (consola, red, accesibilidad, tiempos): `app/audit/page_checks.py`.
 - Cambiar estructura del Word: `app/reporting/test_case_report.py`.
+- Cambiar el reporte HTML de cada corrida: `app/reporting/run_report.py`.
 - Cambiar qué archivos se crean al finalizar: `app/services/artifact_service.py`.
 - Cambiar carpetas de salida: `app/config.py`.
 - Cambiar persistencia JSON: `app/storage/json_repository.py`.
@@ -68,7 +69,16 @@ Al reproducir un flujo se elige un **ambiente** en el panel de flujos guardados.
 
 En el mismo panel se elige el **navegador** (chromium, firefox o webkit, que equivale a Safari), el **dispositivo** (Escritorio con el mismo tamaño que el grabador, iPhone 13, Pixel 7 o iPad) y si corre en **segundo plano**. Firefox y WebKit se instalan una vez con `python -m playwright install firefox webkit`.
 
-Cada reproducción crea `data/runs/run_<flujo>_<navegador>_<dispositivo>_<fecha>/` con `result.json` (estado, pasos, ambiente, freno, navegador y dispositivo) y `trace.zip`. Durante la reproducción se revisa cada pantalla nueva y el resultado queda en `findings.json` de la corrida:
+Cada reproducción crea `data/runs/run_<flujo>_<navegador>_<dispositivo>_<fecha>/` con:
+
+- `report.html`: el reporte de la corrida, que la app abre al terminar. Incluye el resultado (completado, detenido por seguridad o fallido, con el paso, el error y una captura), los hallazgos, las pantallas recorridas con sus tiempos y capturas, los errores de red y de consola agrupados, y la accesibilidad ordenada por impacto.
+- `result.json` y `findings.json`: los mismos datos en JSON, para otras herramientas.
+- `pantalla_NNN.png`, `fallo.png` o `detenido.png`: capturas. Pueden mostrar datos personales; no las comparta fuera del equipo.
+- `trace.zip`, solo si se marca **Guardar traza**. Es opcional porque en sitios grandes guardarla puede tardar varios minutos; su valor por defecto sale de `"trazas"` en `data/run_config.json`.
+
+Solo puede correr una reproducción a la vez desde la UI.
+
+Durante la reproducción se revisa cada pantalla nueva y el resultado queda en `findings.json` de la corrida:
 
 - **Errores de consola** y excepciones de JavaScript.
 - **Errores de red**: respuestas 4xx/5xx y peticiones que no se completaron (las cancelaciones normales al navegar se descartan).
