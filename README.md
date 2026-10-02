@@ -64,7 +64,9 @@ Al reproducir un flujo se elige un **ambiente** en el panel de flujos guardados.
 - `data/run_config.json`: `pasos_bloqueados` (texto o selector de los clics que no deben ejecutarse, por ejemplo "Continuar al pago") y, por ambiente, `freno_pago`. Con el freno activo, la reproducción se detiene antes de un paso bloqueado y lo marca como `detenido_por_seguridad`. **Sin ambiente, o con un ambiente sin `"freno_pago": false`, el freno queda activo.** Desactívelo solo en ambientes con pasarelas de pago en sandbox.
 - `data/test_data.json`: valores para los campos, por selector, id, `name` o placeholder. Reemplazan los valores grabados y los `[MASKED]`; los del ambiente tienen prioridad sobre `campos`. Un valor `env:NOMBRE` se lee de la variable de entorno `NOMBRE`, útil para contraseñas.
 
-Cada reproducción crea `data/runs/run_<flujo>_<fecha>/` con `result.json` (estado, pasos, ambiente y freno) y `trace.zip`. La traza se abre con:
+En el mismo panel se elige el **navegador** (chromium, firefox o webkit, que equivale a Safari), el **dispositivo** (Escritorio con el mismo tamaño que el grabador, iPhone 13, Pixel 7 o iPad) y si corre en **segundo plano**. Firefox y WebKit se instalan una vez con `python -m playwright install firefox webkit`.
+
+Cada reproducción crea `data/runs/run_<flujo>_<navegador>_<dispositivo>_<fecha>/` con `result.json` (estado, pasos, ambiente, freno, navegador y dispositivo) y `trace.zip`. La traza se abre con:
 
 ```powershell
 python -m playwright show-trace data/runs/<carpeta>/trace.zip

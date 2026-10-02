@@ -7,6 +7,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 
+from app.automation.browser_options import BROWSERS, DESKTOP, DEVICE_PRESETS, BrowserOptions
 from app.automation.flow_runner import FlowRunner
 from app.automation.run_settings import NO_ENVIRONMENT, list_environments, load_run_settings
 from app.config import DEFAULT_PATHS
@@ -425,6 +426,46 @@ class MainWindow:
         self.stop_guard_label.pack(side=tk.LEFT)
         self._reload_environments()
         self._update_stop_guard_label()
+
+        browser_row = tk.Frame(saved_flows_panel, bg=self.COLORS["panel"])
+        browser_row.pack(fill=tk.X, padx=12, pady=(0, 10))
+
+        tk.Label(
+            browser_row,
+            text="NAVEGADOR",
+            font=("Segoe UI", 8, "bold"),
+            fg=self.COLORS["muted"],
+            bg=self.COLORS["panel"]
+        ).pack(side=tk.LEFT)
+
+        self.browser_var = tk.StringVar(value=BROWSERS[0])
+        ttk.Combobox(
+            browser_row,
+            textvariable=self.browser_var,
+            values=BROWSERS,
+            state="readonly",
+            width=9,
+        ).pack(side=tk.LEFT, padx=(8, 10))
+
+        self.device_var = tk.StringVar(value=DESKTOP)
+        ttk.Combobox(
+            browser_row,
+            textvariable=self.device_var,
+            values=DEVICE_PRESETS,
+            state="readonly",
+            width=12,
+        ).pack(side=tk.LEFT, padx=(0, 10))
+
+        self.headless_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            browser_row,
+            text="Segundo plano",
+            variable=self.headless_var,
+            font=("Segoe UI", 8),
+            fg=self.COLORS["text"],
+            bg=self.COLORS["panel"],
+            activebackground=self.COLORS["panel"],
+        ).pack(side=tk.LEFT)
 
         replay_button = tk.Button(
             saved_flows_panel,
@@ -1240,17 +1281,32 @@ class MainWindow:
         self.run_flow_button.config(state=tk.DISABLED)
         self._log(f"Iniciando reproducción: {flow_file}")
 
+        browser_options = BrowserOptions(
+            browser=self.browser_var.get(),
+            device=self.device_var.get(),
+            headless=self.headless_var.get(),
+        )
+
         worker = threading.Thread(
             target=self._run_flow_worker,
-            args=(flow_file, self.environment_var.get()),
+            args=(flow_file, self.environment_var.get(), browser_options),
             daemon=True
         )
         worker.start()
 
-    def _run_flow_worker(self, flow_file: Path, environment: str) -> None:
+    def _run_flow_worker(
+        self,
+        flow_file: Path,
+        environment: str,
+        browser_options: BrowserOptions,
+    ) -> None:
         try:
             settings = load_run_settings(environment, DEFAULT_PATHS)
-            FlowRunner(self._recorder_log, settings=settings).run(flow_file)
+            FlowRunner(
+                self._recorder_log,
+                settings=settings,
+                browser_options=browser_options,
+            ).run(flow_file)
         except Exception as error:
             self._log(f"Error ejecutando flujo: {error}")
         finally:

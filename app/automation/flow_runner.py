@@ -5,8 +5,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Locator, sync_playwright
 
+from app.automation.browser_options import BrowserOptions, context_options
 from app.automation.run_settings import (
     RunSettings,
     find_test_value,
@@ -39,6 +41,9 @@ class FlowRunResult:
     status: str
     environment: str | None
     stop_guard: bool
+    browser: str
+    device: str
+    headless: bool
     steps_run: int
     total_steps: int
     run_folder: str
@@ -55,10 +60,12 @@ class FlowRunner:
         log_callback: Optional[Callable[[str], None]] = None,
         settings: RunSettings | None = None,
         paths: AppPaths = DEFAULT_PATHS,
+        browser_options: BrowserOptions | None = None,
     ):
         self.log_callback = log_callback
         self.settings = settings
         self.paths = paths
+        self.browser_options = browser_options or BrowserOptions()
 
     def _log(self, message: str) -> None:
         if self.log_callback:
@@ -78,13 +85,17 @@ class FlowRunner:
             raise ValueError("El flujo no contiene acciones.")
 
         settings = self.settings or load_run_settings(paths=self.paths)
+        options = self.browser_options
         flow_name = flow.get("name") or flow_file.stem
-        run_folder = self._create_run_folder(flow_name)
+        run_folder = self._create_run_folder(flow_name, options)
         result = FlowRunResult(
             flow_name=flow_name,
             status=STATUS_COMPLETED,
             environment=settings.environment,
             stop_guard=settings.stop_guard,
+            browser=options.browser,
+            device=options.device,
+            headless=options.headless,
             steps_run=0,
             total_steps=len(actions),
             run_folder=str(run_folder),
@@ -92,6 +103,7 @@ class FlowRunner:
 
         self._log(f"Abriendo flujo: {flow_file}")
         self._log_settings(settings)
+        self._log(f"Navegador: {options.label}.")
 
         playwright = sync_playwright().start()
         browser = None
@@ -99,8 +111,10 @@ class FlowRunner:
         tracing = False
 
         try:
-            browser = playwright.chromium.launch(headless=False)
-            context = browser.new_context()
+            browser = self._launch_browser(playwright, options)
+            context = browser.new_context(
+                **context_options(options, playwright.devices)
+            )
             if settings.trace:
                 context.tracing.start(
                     title=flow_name,
@@ -225,8 +239,23 @@ class FlowRunner:
             guard = "activado, pero no hay pasos bloqueados en data/run_config.json"
         self._log(f"Ambiente: {environment}. Freno de pago: {guard}.")
 
-    def _create_run_folder(self, flow_name: str) -> Path:
-        sanitized_name = re.sub(r"[^a-zA-Z0-9_\-]+", "_", flow_name).strip("_") or "flujo"
+    @staticmethod
+    def _launch_browser(playwright, options: BrowserOptions):
+        try:
+            return getattr(playwright, options.browser).launch(
+                headless=options.headless
+            )
+        except PlaywrightError as error:
+            if "Executable doesn't exist" in str(error):
+                raise RuntimeError(
+                    f"Falta instalar el navegador {options.browser}. "
+                    f"Ejecute: python -m playwright install {options.browser}"
+                ) from error
+            raise
+
+    def _create_run_folder(self, flow_name: str, options: BrowserOptions) -> Path:
+        name = f"{flow_name}_{options.browser}_{options.device}"
+        sanitized_name = re.sub(r"[^a-zA-Z0-9_\-]+", "_", name).strip("_") or "flujo"
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_folder = self.paths.runs_dir / f"run_{sanitized_name}_{timestamp}"
         run_folder.mkdir(parents=True, exist_ok=True)
