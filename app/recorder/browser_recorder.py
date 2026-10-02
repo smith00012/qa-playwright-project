@@ -5,12 +5,22 @@ from typing import Callable, Optional
 from datetime import datetime
 from pathlib import Path
 
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import sync_playwright
 
+from app.browser_scripts import DISABLE_PRINT_SCRIPT
 from app.models.action import TestAction, ElementInfo
 from app.evidence.screenshot_manager import ScreenshotManager
 from app.recorder.sensitive_data import sanitize_event
 from app.storage.json_repository import JsonRepository
+
+
+START_TIMEOUT_SECONDS = 180
+PAGE_LOAD_TIMEOUT_MS = 60000
+
+
+def _first_line(error: Exception) -> str:
+    return (str(error).strip().splitlines() or [""])[0]
 
 
 class BrowserRecorder:
@@ -61,6 +71,7 @@ class BrowserRecorder:
         self.error = None
         self.closed_unexpectedly = False
         self.execution_saved = False
+        self.abandoned = False
 
     def _emit_log(self, message: str) -> None:
         if self.log_callback:
@@ -90,6 +101,7 @@ class BrowserRecorder:
         self.error = None
         self.closed_unexpectedly = False
         self.execution_saved = False
+        self.abandoned = False
         self.actions.clear()
 
         self.worker_thread = threading.Thread(
@@ -100,10 +112,14 @@ class BrowserRecorder:
 
         self.worker_thread.start()
 
-        # Esperamos a que Playwright haya iniciado correctamente.
-        if not self.ready_event.wait(timeout=15):
+        # Esperamos a que el navegador abra. La carga de la página no
+        # cuenta: un sitio lento no debe impedir iniciar la grabación.
+        if not self.ready_event.wait(timeout=START_TIMEOUT_SECONDS):
+            self.abandoned = True
+            self.stop_event.set()
             raise RuntimeError(
-                "No fue posible iniciar el navegador."
+                "No fue posible iniciar el navegador en "
+                f"{START_TIMEOUT_SECONDS} segundos."
             )
 
         if self.error:
@@ -149,6 +165,9 @@ class BrowserRecorder:
             # --------------------------------------------------
             # Instalamos los listeners JavaScript
             # --------------------------------------------------
+
+            # El diálogo de impresión bloquea la página y la grabación.
+            self.page.add_init_script(DISABLE_PRINT_SCRIPT)
 
             self.page.add_init_script(
                 """
@@ -566,19 +585,28 @@ class BrowserRecorder:
                 """
             )
 
+            self.ready_event.set()
+
             print("[RECORDER] Abriendo:", url)
 
-            self.page.goto(
-                url,
-                wait_until="domcontentloaded"
-            )
-
-            print(
-                "[RECORDER] Página lista:",
-                self.page.url
-            )
-
-            self.ready_event.set()
+            try:
+                self.page.goto(
+                    url,
+                    wait_until="domcontentloaded",
+                    timeout=PAGE_LOAD_TIMEOUT_MS
+                )
+                print(
+                    "[RECORDER] Página lista:",
+                    self.page.url
+                )
+            except PlaywrightError as error:
+                if self.page.is_closed():
+                    raise
+                self._emit_log(
+                    "La página tardó en abrir o no respondió "
+                    f"({_first_line(error)}). El navegador sigue abierto: "
+                    "recargue o navegue y continúe la grabación."
+                )
 
             # --------------------------------------------------
             # Bucle principal del recorder
@@ -625,6 +653,10 @@ class BrowserRecorder:
             self.error = error
             self.closed_unexpectedly = not self.stop_event.is_set()
 
+            if self.abandoned:
+                self.ready_event.set()
+                return
+
             print("")
             print("====================================")
             print("ERROR EN RECORDER")
@@ -632,9 +664,18 @@ class BrowserRecorder:
             print(error)
 
             if self.closed_unexpectedly:
-                self._emit_log(
-                    "El navegador se cerró antes de finalizar la prueba."
-                )
+                if "has been closed" in str(error):
+                    self._emit_log(
+                        "Se cerró la ventana del navegador antes de finalizar "
+                        "la prueba. Pulse FINALIZAR PRUEBA para generar el "
+                        "flujo y el Word con las acciones registradas."
+                    )
+                else:
+                    self._emit_log(
+                        "La grabación se detuvo por un error: "
+                        f"{_first_line(error)}. Pulse FINALIZAR PRUEBA para "
+                        "generar el flujo y el Word con las acciones registradas."
+                    )
                 self._save_execution()
 
             self.ready_event.set()
@@ -656,6 +697,14 @@ class BrowserRecorder:
 
         Solo colocamos el evento en la cola.
         """
+
+        frame = source.get("frame") if isinstance(source, dict) else None
+        if (
+            frame is not None
+            and self.page is not None
+            and frame != self.page.main_frame
+        ):
+            event = {**event, "frame_url": frame.url}
 
         self.event_queue.put(sanitize_event(event))
         self._emit_log(
@@ -753,7 +802,13 @@ class BrowserRecorder:
                 timespec="seconds"
             ),
 
-            url=event.get("url") or (self.page.url if self.page else ""),
+            url=(
+                self.page.url
+                if event.get("frame_url") and self.page
+                else event.get("url") or (self.page.url if self.page else "")
+            ),
+
+            frame_url=event.get("frame_url"),
 
             element=element,
 

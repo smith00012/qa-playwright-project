@@ -23,6 +23,9 @@ class TestAction:
     element: ElementInfo | None = None
     value: str | None = None
     screenshot: str | None = None
+    # URL del iframe cuando la acción ocurre dentro de uno (por ejemplo,
+    # los campos de tarjeta de una pasarela de pago).
+    frame_url: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)

@@ -731,6 +731,7 @@ class MainWindow:
         status_colors = {
             "detenido": self.COLORS["muted"],
             "grabando": self.COLORS["success"],
+            "abriendo": self.COLORS["accent"],
             "finalizado": self.COLORS["accent_dark"],
         }
         color = status_colors[status]
@@ -1131,26 +1132,45 @@ class MainWindow:
                 execution_folder,
                 log_callback=self._recorder_log
             )
-
-            self.recorder.start(url)
-
-            self._log("BrowserRecorder iniciado correctamente.")
-
-            self.start_button.config(
-                state=tk.DISABLED
-            )
-
-            self.stop_button.config(
-                state=tk.NORMAL
-            )
-
-            self.status_label.config(text="Estado: Grabando...")
-            self._set_status("grabando")
-
         except Exception as error:
-
             self._log(f"Error iniciando grabación: {error}")
             show_error(self.root, self.ERROR_TITLE, str(error))
+            return
+
+        # Abrir el navegador puede tardar más de un minuto en algunos
+        # equipos; se hace fuera del hilo de la UI para que no se congele.
+        self.start_button.config(state=tk.DISABLED)
+        self.status_label.config(text="Estado: Abriendo navegador...")
+        self._set_status("abriendo")
+        self._log("Abriendo el navegador; puede tardar unos segundos...")
+
+        recorder = self.recorder
+        threading.Thread(
+            target=self._start_recorder_worker,
+            args=(recorder, url),
+            daemon=True,
+        ).start()
+
+    def _start_recorder_worker(self, recorder: BrowserRecorder, url: str) -> None:
+        try:
+            recorder.start(url)
+        except Exception as error:
+            self.root.after(0, lambda: self._on_recorder_start_failed(error))
+            return
+        self.root.after(0, self._on_recorder_started)
+
+    def _on_recorder_started(self) -> None:
+        self._log("BrowserRecorder iniciado correctamente.")
+        self.stop_button.config(state=tk.NORMAL)
+        self.status_label.config(text="Estado: Grabando...")
+        self._set_status("grabando")
+
+    def _on_recorder_start_failed(self, error: Exception) -> None:
+        self._log(f"Error iniciando grabación: {error}")
+        self.start_button.config(state=tk.NORMAL)
+        self.status_label.config(text="Estado: En espera")
+        self._set_status("detenido")
+        show_error(self.root, self.ERROR_TITLE, str(error))
 
     def stop_recording(self) -> None:
 

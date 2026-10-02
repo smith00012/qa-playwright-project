@@ -9,7 +9,8 @@ from typing import Callable, Optional
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Locator, sync_playwright
 
-from app.audit.page_checks import PageAuditor
+from app.audit.page_checks import PageAuditor, safe_url
+from app.browser_scripts import DISABLE_PRINT_SCRIPT
 from app.automation.browser_options import BrowserOptions, context_options
 from app.automation.run_settings import (
     RunSettings,
@@ -22,6 +23,7 @@ from app.reporting.run_report import REPORT_FILENAME, RunReportGenerator
 
 
 MASKED_VALUE = "[MASKED]"
+FRAME_TIMEOUT_S = 10
 STATUS_COMPLETED = "completado"
 STATUS_STOPPED = "detenido_por_seguridad"
 STATUS_FAILED = "fallido"
@@ -132,6 +134,7 @@ class FlowRunner:
             context = browser.new_context(
                 **context_options(options, playwright.devices)
             )
+            context.add_init_script(DISABLE_PRINT_SCRIPT)
             if settings.trace:
                 context.tracing.start(
                     title=flow_name,
@@ -219,7 +222,8 @@ class FlowRunner:
                 )
                 return None
 
-        locator = self._get_locator(page, element)
+        target = self._get_frame(page, action.get("frame_url"))
+        locator = self._get_locator(target, element)
 
         if action_type == "click":
             blocked_step = self._blocked_step(locator, element, settings)
@@ -399,6 +403,26 @@ class FlowRunner:
             f"{findings['slow_pages']} de {findings['pages_checked']} pantallas lentas. "
             "Detalle en findings.json."
         )
+
+    @staticmethod
+    def _get_frame(page, frame_url: str | None, timeout_s: float = FRAME_TIMEOUT_S):
+        """
+        Devuelve el iframe donde se grabó la acción, o la página si no hubo
+        iframe. Compara sin query, porque suele cambiar en cada carga.
+        """
+
+        if not frame_url:
+            return page
+
+        wanted = frame_url.split("?", 1)[0]
+        deadline = time.monotonic() + timeout_s
+        while True:
+            for frame in page.frames:
+                if frame.url.split("?", 1)[0] == wanted:
+                    return frame
+            if time.monotonic() >= deadline:
+                raise ValueError(f"No se encontró el iframe {safe_url(frame_url)}.")
+            page.wait_for_timeout(250)
 
     @staticmethod
     def _get_locator(page, element: dict) -> Locator:

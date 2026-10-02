@@ -136,6 +136,34 @@ class FlowRunnerActionTests(unittest.TestCase):
 
         self.assertEqual(FlowRunner._superseded_steps(actions), {2, 3})
 
+    def test_action_inside_iframe_uses_that_frame(self):
+        frame_locator = FakeLocator()
+        frame = FakePage(frame_locator)
+        frame.url = "https://pagos.test/card/card-cvc.html?session=abc"
+        page = FakePage(FakeLocator())
+        page.frames = [page, frame]
+        page.url = "https://sitio.test/pagar"
+        action = {
+            "action_type": "input",
+            "element": {"selector": "#cvc", "name": "cvc"},
+            "value": "123",
+            "frame_url": "https://pagos.test/card/card-cvc.html?session=xyz",
+        }
+
+        self.runner._run_action(page, action, 1, RunSettings())
+
+        self.assertEqual(frame_locator.calls, [("fill", "123")])
+        self.assertEqual(page._locator.calls, [])
+
+    def test_missing_iframe_raises_clear_error(self):
+        page = FakePage(FakeLocator())
+        page.frames = [page]
+        page.url = "https://sitio.test/pagar"
+        page.wait_for_timeout = lambda _ms: None
+
+        with self.assertRaises(ValueError):
+            FlowRunner._get_frame(page, "https://pagos.test/card.html?token=1", timeout_s=0)
+
 
 if __name__ == "__main__":
     unittest.main()
