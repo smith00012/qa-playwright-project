@@ -14,7 +14,7 @@ python -m app.main
 app/
   main.py                         Punto de entrada Tkinter
   config.py                       Rutas y configuración compartida
-  automation/                     Reproducción de flujos guardados
+  automation/                     Reproducción de flujos guardados y opciones por ambiente
   evidence/                       Captura de screenshots
   models/                         Modelos de dominio (action.py)
   recorder/                       Captura, sanitización y transformación de eventos
@@ -44,6 +44,7 @@ data/
 - Cambiar qué valores se protegen antes de guardarse: `app/recorder/sensitive_data.py`.
 - Cambiar agrupación y descripción de acciones QA: `app/recorder/event_parser.py`.
 - Cambiar reproducción automática: `app/automation/flow_runner.py`.
+- Cambiar freno de pago, ambientes o datos de prueba: `app/automation/run_settings.py`.
 - Cambiar estructura del Word: `app/reporting/test_case_report.py`.
 - Cambiar qué archivos se crean al finalizar: `app/services/artifact_service.py`.
 - Cambiar carpetas de salida: `app/config.py`.
@@ -55,6 +56,19 @@ data/
 2. El recorder captura eventos y screenshots.
 3. Al finalizar, `TestArtifactService` genera `actions.json`, `qa_actions.json`, el flujo reutilizable y el Word.
 4. `FlowRunner` puede reproducir el último flujo guardado.
+
+## Reproducción por ambiente
+
+Al reproducir un flujo se elige un **ambiente** en el panel de flujos guardados. Cada ambiente define si el freno de pago está activo y qué datos de prueba se usan. Los dos archivos viven en `data/` y no se suben al repositorio; hay ejemplos en `docs/examples/`.
+
+- `data/run_config.json`: `pasos_bloqueados` (texto o selector de los clics que no deben ejecutarse, por ejemplo "Continuar al pago") y, por ambiente, `freno_pago`. Con el freno activo, la reproducción se detiene antes de un paso bloqueado y lo marca como `detenido_por_seguridad`. **Sin ambiente, o con un ambiente sin `"freno_pago": false`, el freno queda activo.** Desactívelo solo en ambientes con pasarelas de pago en sandbox.
+- `data/test_data.json`: valores para los campos, por selector, id, `name` o placeholder. Reemplazan los valores grabados y los `[MASKED]`; los del ambiente tienen prioridad sobre `campos`. Un valor `env:NOMBRE` se lee de la variable de entorno `NOMBRE`, útil para contraseñas.
+
+Cada reproducción crea `data/runs/run_<flujo>_<fecha>/` con `result.json` (estado, pasos, ambiente y freno) y `trace.zip`. La traza se abre con:
+
+```powershell
+python -m playwright show-trace data/runs/<carpeta>/trace.zip
+```
 
 ## Instalación
 

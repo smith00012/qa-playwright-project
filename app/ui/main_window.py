@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from app.automation.flow_runner import FlowRunner
+from app.automation.run_settings import NO_ENVIRONMENT, list_environments, load_run_settings
 from app.config import DEFAULT_PATHS
 from app.recorder.browser_recorder import BrowserRecorder
 from app.reporting.test_case_report import TestCaseReportGenerator
@@ -390,6 +391,40 @@ class MainWindow:
         flow_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.saved_flow_tree.configure(yscrollcommand=flow_scrollbar.set)
         flow_scrollbar.config(command=self.saved_flow_tree.yview)
+
+        environment_row = tk.Frame(saved_flows_panel, bg=self.COLORS["panel"])
+        environment_row.pack(fill=tk.X, padx=12, pady=(0, 10))
+
+        tk.Label(
+            environment_row,
+            text="AMBIENTE",
+            font=("Segoe UI", 8, "bold"),
+            fg=self.COLORS["muted"],
+            bg=self.COLORS["panel"]
+        ).pack(side=tk.LEFT)
+
+        self.environment_var = tk.StringVar(value=NO_ENVIRONMENT)
+        self.environment_combo = ttk.Combobox(
+            environment_row,
+            textvariable=self.environment_var,
+            state="readonly",
+            width=18,
+            postcommand=self._reload_environments,
+        )
+        self.environment_combo.pack(side=tk.LEFT, padx=(8, 10))
+        self.environment_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._update_stop_guard_label()
+        )
+
+        self.stop_guard_label = tk.Label(
+            environment_row,
+            font=("Segoe UI", 8, "bold"),
+            bg=self.COLORS["panel"]
+        )
+        self.stop_guard_label.pack(side=tk.LEFT)
+        self._reload_environments()
+        self._update_stop_guard_label()
 
         replay_button = tk.Button(
             saved_flows_panel,
@@ -1174,6 +1209,32 @@ class MainWindow:
 
         self._run_flow_file(flow_file)
 
+    def _reload_environments(self) -> None:
+        try:
+            environments = list_environments(DEFAULT_PATHS)
+        except (OSError, ValueError) as error:
+            self._log(f"No se pudo leer data/run_config.json: {error}")
+            environments = []
+        self.environment_combo.config(values=[NO_ENVIRONMENT, *environments])
+
+    def _update_stop_guard_label(self) -> None:
+        try:
+            settings = load_run_settings(self.environment_var.get(), DEFAULT_PATHS)
+        except (OSError, ValueError) as error:
+            self._log(f"No se pudo leer la configuración del ambiente: {error}")
+            return
+
+        if settings.stop_guard:
+            self.stop_guard_label.config(
+                text="Freno de pago: activado",
+                fg=self.COLORS["accent_dark"],
+            )
+        else:
+            self.stop_guard_label.config(
+                text="Freno de pago: desactivado",
+                fg=self.COLORS["danger"],
+            )
+
     def _run_flow_file(self, flow_file: Path) -> None:
         self.latest_flow_path = flow_file
         self.run_flow_button.config(state=tk.DISABLED)
@@ -1181,14 +1242,15 @@ class MainWindow:
 
         worker = threading.Thread(
             target=self._run_flow_worker,
-            args=(flow_file,),
+            args=(flow_file, self.environment_var.get()),
             daemon=True
         )
         worker.start()
 
-    def _run_flow_worker(self, flow_file: Path) -> None:
+    def _run_flow_worker(self, flow_file: Path, environment: str) -> None:
         try:
-            FlowRunner(self._recorder_log).run(flow_file)
+            settings = load_run_settings(environment, DEFAULT_PATHS)
+            FlowRunner(self._recorder_log, settings=settings).run(flow_file)
         except Exception as error:
             self._log(f"Error ejecutando flujo: {error}")
         finally:

@@ -1,0 +1,14 @@
+{
+  "campos": {
+    "billing_first_name": "QA",
+    "billing_last_name": "Automatizado"
+  },
+  "ambientes": {
+    "pruebas": {
+      "campos": {
+        "billing_email": "cuenta.qa@example.com",
+        "password": "env:QA_PASSWORD_PRUEBAS"
+      }
+    }
+  }
+}

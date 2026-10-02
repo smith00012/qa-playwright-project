@@ -1,0 +1,12 @@
+{
+  "trazas": true,
+  "pasos_bloqueados": ["Continuar al pago"],
+  "ambientes": {
+    "pruebas": {
+      "freno_pago": false
+    },
+    "produccion": {
+      "freno_pago": true
+    }
+  }
+}
