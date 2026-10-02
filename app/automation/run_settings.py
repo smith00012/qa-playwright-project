@@ -9,6 +9,7 @@ from app.config import AppPaths, DEFAULT_PATHS
 
 NO_ENVIRONMENT = "(sin ambiente)"
 ENV_VALUE_PREFIX = "env:"
+DEFAULT_SLOW_LOAD_MS = 4000
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,9 @@ class RunSettings:
     blocked_steps: tuple[str, ...] = ()
     test_data: dict[str, str] = field(default_factory=dict)
     trace: bool = True
+    accessibility: bool = True
+    ignore_patterns: tuple[str, ...] = ()
+    slow_load_ms: int = DEFAULT_SLOW_LOAD_MS
 
 
 def list_environments(paths: AppPaths = DEFAULT_PATHS) -> list[str]:
@@ -58,12 +62,17 @@ def load_run_settings(
         environment_data = (test_data_config.get("ambientes") or {}).get(environment) or {}
         test_data.update(environment_data.get("campos") or {})
 
+    checks = config.get("revisiones") or {}
+
     return RunSettings(
         environment=environment,
         stop_guard=stop_guard,
         blocked_steps=tuple(str(step) for step in blocked_steps if str(step).strip()),
         test_data={str(key): str(value) for key, value in test_data.items()},
         trace=config.get("trazas", True) is not False,
+        accessibility=checks.get("accesibilidad", True) is not False,
+        ignore_patterns=tuple(str(item) for item in checks.get("ignorar", []) if str(item).strip()),
+        slow_load_ms=int(checks.get("carga_lenta_ms", DEFAULT_SLOW_LOAD_MS)),
     )
 
 

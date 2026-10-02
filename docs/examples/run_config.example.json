@@ -1,6 +1,8 @@
 {
   "trazas": true,
-  "pasos_bloqueados": ["Continuar al pago"],
+  "pasos_bloqueados": [
+    "Continuar al pago"
+  ],
   "ambientes": {
     "pruebas": {
       "freno_pago": false
@@ -8,5 +10,14 @@
     "produccion": {
       "freno_pago": true
     }
+  },
+  "revisiones": {
+    "accesibilidad": true,
+    "carga_lenta_ms": 4000,
+    "ignorar": [
+      "googletagmanager.com",
+      "facebook.net",
+      "hotjar"
+    ]
   }
 }

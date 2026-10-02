@@ -14,6 +14,7 @@ python -m app.main
 app/
   main.py                         Punto de entrada Tkinter
   config.py                       Rutas y configuración compartida
+  audit/                          Revisiones por pantalla durante la reproducción
   automation/                     Reproducción de flujos guardados y opciones por ambiente
   evidence/                       Captura de screenshots
   models/                         Modelos de dominio (action.py)
@@ -45,6 +46,7 @@ data/
 - Cambiar agrupación y descripción de acciones QA: `app/recorder/event_parser.py`.
 - Cambiar reproducción automática: `app/automation/flow_runner.py`.
 - Cambiar freno de pago, ambientes o datos de prueba: `app/automation/run_settings.py`.
+- Cambiar las revisiones por pantalla (consola, red, accesibilidad, tiempos): `app/audit/page_checks.py`.
 - Cambiar estructura del Word: `app/reporting/test_case_report.py`.
 - Cambiar qué archivos se crean al finalizar: `app/services/artifact_service.py`.
 - Cambiar carpetas de salida: `app/config.py`.
@@ -66,7 +68,16 @@ Al reproducir un flujo se elige un **ambiente** en el panel de flujos guardados.
 
 En el mismo panel se elige el **navegador** (chromium, firefox o webkit, que equivale a Safari), el **dispositivo** (Escritorio con el mismo tamaño que el grabador, iPhone 13, Pixel 7 o iPad) y si corre en **segundo plano**. Firefox y WebKit se instalan una vez con `python -m playwright install firefox webkit`.
 
-Cada reproducción crea `data/runs/run_<flujo>_<navegador>_<dispositivo>_<fecha>/` con `result.json` (estado, pasos, ambiente, freno, navegador y dispositivo) y `trace.zip`. La traza se abre con:
+Cada reproducción crea `data/runs/run_<flujo>_<navegador>_<dispositivo>_<fecha>/` con `result.json` (estado, pasos, ambiente, freno, navegador y dispositivo) y `trace.zip`. Durante la reproducción se revisa cada pantalla nueva y el resultado queda en `findings.json` de la corrida:
+
+- **Errores de consola** y excepciones de JavaScript.
+- **Errores de red**: respuestas 4xx/5xx y peticiones que no se completaron (las cancelaciones normales al navegar se descartan).
+- **Accesibilidad** con axe-core, una vez por URL.
+- **Tiempos de carga** (TTFB, DOMContentLoaded, load y LCP cuando el navegador lo mide); una pantalla es lenta si supera `carga_lenta_ms` o no termina de cargar.
+
+En `revisiones` de `data/run_config.json` se puede apagar la accesibilidad, cambiar el umbral de carga y listar textos en `ignorar` (dominios de terceros o mensajes conocidos). Las URLs se guardan sin los valores de la query para no exponer correos ni tokens. El conteo también queda en `findings` de `result.json`. Estas revisiones no cambian el estado del flujo: un flujo puede completarse y tener hallazgos.
+
+La traza se abre con:
 
 ```powershell
 python -m playwright show-trace data/runs/<carpeta>/trace.zip

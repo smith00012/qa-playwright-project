@@ -29,6 +29,7 @@ Remove-Item -Force -ErrorAction SilentlyContinue QA-Test-Recorder.spec
     --name QA-Test-Recorder `
     --collect-all playwright `
     --collect-all docx `
+    --collect-all axe_playwright_python `
     app\main.py
 
 $distribution = Join-Path $projectRoot "dist\QA-Test-Recorder"

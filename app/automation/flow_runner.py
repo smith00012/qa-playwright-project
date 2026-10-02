@@ -8,6 +8,7 @@ from typing import Callable, Optional
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Locator, sync_playwright
 
+from app.audit.page_checks import PageAuditor
 from app.automation.browser_options import BrowserOptions, context_options
 from app.automation.run_settings import (
     RunSettings,
@@ -50,6 +51,7 @@ class FlowRunResult:
     trace_file: str | None = None
     stopped_at: str | None = None
     error: str | None = None
+    findings: dict | None = None
 
 
 class FlowRunner:
@@ -109,6 +111,7 @@ class FlowRunner:
         browser = None
         context = None
         tracing = False
+        auditor = PageAuditor(settings, self._log)
 
         try:
             browser = self._launch_browser(playwright, options)
@@ -124,16 +127,20 @@ class FlowRunner:
                 tracing = True
 
             page = context.new_page()
+            auditor.attach(page)
             page.goto(start_url, wait_until="domcontentloaded")
             self._log(f"Página inicial: {start_url}")
+            auditor.check_page(page, 0)
 
             for index, action in enumerate(actions, start=1):
+                auditor.current_step = index
                 stopped_at = self._run_action(page, action, index, settings)
                 if stopped_at:
                     result.status = STATUS_STOPPED
                     result.stopped_at = stopped_at
                     break
                 result.steps_run = index
+                auditor.check_page(page, index)
 
             if result.status == STATUS_COMPLETED:
                 self._log("Flujo ejecutado correctamente.")
@@ -149,7 +156,10 @@ class FlowRunner:
             if browser:
                 browser.close()
             playwright.stop()
+            result.findings = auditor.summary()
+            self._save_json(run_folder / "findings.json", auditor.to_dict())
             self._save_result(run_folder, result)
+            self._log_findings(result.findings)
             self._log("Navegador del flujo cerrado.")
 
         return result
@@ -274,10 +284,24 @@ class FlowRunner:
         )
         return str(trace_file)
 
+    @classmethod
+    def _save_result(cls, run_folder: Path, result: FlowRunResult) -> None:
+        cls._save_json(run_folder / "result.json", asdict(result))
+
     @staticmethod
-    def _save_result(run_folder: Path, result: FlowRunResult) -> None:
-        with (run_folder / "result.json").open("w", encoding="utf-8") as file:
-            json.dump(asdict(result), file, ensure_ascii=False, indent=2)
+    def _save_json(filepath: Path, data: dict) -> None:
+        with filepath.open("w", encoding="utf-8") as file:
+            json.dump(data, file, ensure_ascii=False, indent=2)
+
+    def _log_findings(self, findings: dict) -> None:
+        self._log(
+            "Hallazgos: "
+            f"{findings['console_errors']} errores de consola, "
+            f"{findings['network_errors']} errores de red, "
+            f"{findings['accessibility_violations']} problemas de accesibilidad, "
+            f"{findings['slow_pages']} de {findings['pages_checked']} pantallas lentas. "
+            "Detalle en findings.json."
+        )
 
     @staticmethod
     def _get_locator(page, element: dict) -> Locator:
