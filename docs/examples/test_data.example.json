@@ -8,9 +8,9 @@
       "campos": {
         "billing_email": "cuenta.qa@usil.edu.pe",
         "password": "env:QA_PASSWORD_PRUEBAS",
-        "cardnumber": "NUMERO_DE_TARJETA_DE_PRUEBA",
-        "exp-date": "MM/AA",
-        "cvc": "CVV_DE_PRUEBA"
+        "cardnumber": "5160030000000317",
+        "exp-date": "03/2028",
+        "cvc": "111"
       }
     }
   }
