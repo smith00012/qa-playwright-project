@@ -481,8 +481,11 @@ class MainWindow:
             activebackground=self.COLORS["panel"],
         ).pack(side=tk.LEFT, padx=(8, 0))
 
+        replay_row = tk.Frame(saved_flows_panel, bg=self.COLORS["panel"])
+        replay_row.pack(fill=tk.X, padx=12, pady=(0, 12))
+
         self.replay_button = tk.Button(
-            saved_flows_panel,
+            replay_row,
             text="▶ REPRODUCIR FLUJO SELECCIONADO",
             command=self.run_selected_flow,
             font=("Segoe UI", 9, "bold"),
@@ -495,7 +498,24 @@ class MainWindow:
             padx=15,
             pady=9,
         )
-        self.replay_button.pack(anchor=tk.W, padx=12, pady=(0, 12))
+        self.replay_button.pack(side=tk.LEFT)
+
+        self.guide_button = tk.Button(
+            replay_row,
+            text="GENERAR GUÍA DE USO",
+            command=self.generate_selected_guide,
+            font=("Segoe UI", 9, "bold"),
+            fg=self.COLORS["accent_dark"],
+            bg=self.COLORS["panel"],
+            activeforeground=self.COLORS["accent_dark"],
+            activebackground=self.COLORS["panel"],
+            relief=tk.SOLID,
+            borderwidth=1,
+            cursor="hand2",
+            padx=15,
+            pady=8,
+        )
+        self.guide_button.pack(side=tk.LEFT, padx=(10, 0))
 
         status_bar = tk.Frame(
             content,
@@ -1275,6 +1295,18 @@ class MainWindow:
             return
         self._run_flow_file(flow_file)
 
+    def generate_selected_guide(self) -> None:
+        flow_file = self._select_flow_path()
+        if flow_file is None:
+            self._log("No se seleccionó un flujo guardado para la guía.")
+            show_warning(
+                self.root,
+                self.WARNING_TITLE,
+                "Seleccione un flujo guardado antes de generar su guía.",
+            )
+            return
+        self._run_flow_file(flow_file, guide=True)
+
     def run_latest_flow(self) -> None:
         flow_file = self.latest_flow_path or self._find_latest_flow()
 
@@ -1310,7 +1342,7 @@ class MainWindow:
                 fg=self.COLORS["danger"],
             )
 
-    def _run_flow_file(self, flow_file: Path) -> None:
+    def _run_flow_file(self, flow_file: Path, guide: bool = False) -> None:
         if self.flow_running:
             self._log("Ya hay una reproducción en curso. Espere a que termine.")
             return
@@ -1327,7 +1359,7 @@ class MainWindow:
 
         worker = threading.Thread(
             target=self._run_flow_worker,
-            args=(flow_file, self.environment_var.get(), browser_options, self.trace_var.get()),
+            args=(flow_file, self.environment_var.get(), browser_options, self.trace_var.get(), guide),
             daemon=True
         )
         worker.start()
@@ -1338,8 +1370,9 @@ class MainWindow:
         environment: str,
         browser_options: BrowserOptions,
         trace: bool,
+        guide: bool = False,
     ) -> None:
-        runner = FlowRunner(self._recorder_log, browser_options=browser_options)
+        runner = FlowRunner(self._recorder_log, browser_options=browser_options, guide=guide)
         try:
             runner.settings = replace(
                 load_run_settings(environment, DEFAULT_PATHS),
@@ -1349,7 +1382,10 @@ class MainWindow:
         except Exception as error:
             self._log(f"Error ejecutando flujo: {error}")
         finally:
-            report_file = runner.last_result.report_file if runner.last_result else None
+            result = runner.last_result
+            report_file = None
+            if result:
+                report_file = (result.guide_file if guide else None) or result.report_file
             self.root.after(0, lambda: self._finish_flow_run(report_file))
 
     def _default_trace(self) -> bool:
@@ -1367,4 +1403,5 @@ class MainWindow:
     def _set_replay_buttons_state(self, state: str) -> None:
         self.run_flow_button.config(state=state)
         self.replay_button.config(state=state)
+        self.guide_button.config(state=state)
 

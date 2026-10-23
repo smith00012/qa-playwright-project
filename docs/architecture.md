@@ -8,11 +8,11 @@
 | `app/services/` | Use cases that coordinate recording, storage, and reports |
 | `app/models/` | Framework-independent action and element data in `action.py` |
 | `app/recorder/` | Browser event collection, sensitive-data sanitization, and conversion to QA actions |
-| `app/automation/` | Replay of recorded, site-agnostic flows, run settings per environment, browser and device options |
+| `app/automation/` | Replay of recorded, site-agnostic flows, run settings per environment, browser and device options, step capture for the user guide |
 | `app/audit/` | Generic per-page checks during replay: console, network, accessibility (axe), load timings |
 | `app/storage/` | JSON persistence and Excel matrix reading |
 | `app/evidence/` | Screenshot capture and evidence formatting |
-| `app/reporting/` | Word document generation |
+| `app/reporting/` | Word test cases, HTML run report, and the step-by-step user guide (HTML and Word) |
 | `scripts/` | Manual diagnostics and maintenance commands |
 | `test/` | Automated unit and integration tests |
 

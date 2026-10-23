@@ -25,6 +25,10 @@ class AppPaths:
         return self.data_dir / "runs"
 
     @property
+    def guides_dir(self) -> Path:
+        return self.data_dir / "guides"
+
+    @property
     def report_target_file(self) -> Path:
         return self.data_dir / "report_target.json"
 

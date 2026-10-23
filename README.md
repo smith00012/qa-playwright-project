@@ -49,6 +49,9 @@ data/
 - Cambiar las revisiones por pantalla (consola, red, accesibilidad, tiempos): `app/audit/page_checks.py`.
 - Cambiar estructura del Word: `app/reporting/test_case_report.py`.
 - Cambiar el reporte HTML de cada corrida: `app/reporting/run_report.py`.
+- Cambiar qué se registra para la guía de uso: `app/automation/guide_capture.py`.
+- Cambiar los textos, la agrupación o el formato de la guía de uso: `app/reporting/user_guide.py`.
+- Cambiar los recuadros numerados de la guía: `app/evidence/step_markers.py`.
 - Cambiar qué archivos se crean al finalizar: `app/services/artifact_service.py`.
 - Cambiar carpetas de salida: `app/config.py`.
 - Cambiar persistencia JSON: `app/storage/json_repository.py`.
@@ -86,6 +89,18 @@ Durante la reproducción se revisa cada pantalla nueva y el resultado queda en `
 - **Tiempos de carga** (TTFB, DOMContentLoaded, load y LCP cuando el navegador lo mide); una pantalla es lenta si supera `carga_lenta_ms` o no termina de cargar.
 
 En `revisiones` de `data/run_config.json` se puede apagar la accesibilidad, cambiar el umbral de carga y listar textos en `ignorar` (dominios de terceros o mensajes conocidos). Las URLs se guardan sin los valores de la query para no exponer correos ni tokens. El conteo también queda en `findings` de `result.json`. Estas revisiones no cambian el estado del flujo: un flujo puede completarse y tener hallazgos.
+
+## Guía de uso paso a paso
+
+**Generar guía de uso**, en el panel de flujos guardados, reproduce el flujo seleccionado con el ambiente, navegador y dispositivo elegidos y arma una guía para usuarios finales. Al terminar se abre `guia.html`; en la misma carpeta de la corrida queda `guia.docx` y también el reporte de siempre.
+
+- Los pasos se agrupan por pantalla (misma URL y título). Cada captura lleva un recuadro con el número de cada paso, también en móviles.
+- Los textos nombran la etiqueta visible del control ("Completa **Correo electrónico**", "En **Sede**, elige **Lima**") y nunca incluyen lo escrito. El clic que el grabador guarda antes de escribir en un campo no se muestra.
+- Con el freno de pago activo, la guía llega hasta el botón bloqueado (lo muestra, pero no lo pulsa). Para documentar el pago, use un ambiente con pagos de prueba.
+- La primera vez se crea `data/guides/<flujo>.json` con los textos detectados. Ahí se cambia el título, la introducción, el título y la nota de cada pantalla y el texto de cada paso (`**texto**` resalta), y en `ocultar` se ponen los números de paso que sobran. Al generar de nuevo se conservan esos textos y se toman capturas nuevas, así que basta regenerar cuando cambie el sitio.
+- Las capturas muestran lo que se escribió en pantallas anteriores (por ejemplo, el correo ya cargado). Use datos de prueba ficticios en `data/test_data.json` antes de compartir una guía.
+
+`guide.json` guarda los datos crudos (etiquetas, posiciones y capturas) y `guia_NNN_pasos.png`, las capturas marcadas.
 
 La traza se abre con:
 

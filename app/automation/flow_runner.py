@@ -12,6 +12,7 @@ from playwright.sync_api import Locator, sync_playwright
 from app.audit.page_checks import PageAuditor, safe_url
 from app.browser_scripts import DISABLE_PRINT_SCRIPT
 from app.automation.browser_options import BrowserOptions, context_options
+from app.automation.guide_capture import GuideCapture
 from app.automation.run_settings import (
     RunSettings,
     find_test_value,
@@ -20,6 +21,7 @@ from app.automation.run_settings import (
 )
 from app.config import AppPaths, DEFAULT_PATHS
 from app.reporting.run_report import REPORT_FILENAME, RunReportGenerator
+from app.reporting.user_guide import GUIDE_DATA_FILENAME, UserGuideGenerator
 
 
 MASKED_VALUE = "[MASKED]"
@@ -62,6 +64,7 @@ class FlowRunResult:
     failed_action: str | None = None
     screenshot: str | None = None
     report_file: str | None = None
+    guide_file: str | None = None
 
 
 class FlowRunner:
@@ -73,12 +76,15 @@ class FlowRunner:
         settings: RunSettings | None = None,
         paths: AppPaths = DEFAULT_PATHS,
         browser_options: BrowserOptions | None = None,
+        guide: bool = False,
     ):
         self.log_callback = log_callback
         self.settings = settings
         self.paths = paths
         self.browser_options = browser_options or BrowserOptions()
+        self.guide = guide
         self.last_result: FlowRunResult | None = None
+        self._guide: GuideCapture | None = None
 
     def _log(self, message: str) -> None:
         if self.log_callback:
@@ -127,6 +133,7 @@ class FlowRunner:
         context = None
         tracing = False
         auditor = PageAuditor(settings, self._log)
+        self._guide = GuideCapture(run_folder, self._log) if self.guide else None
         page = None
 
         try:
@@ -168,6 +175,8 @@ class FlowRunner:
 
             if result.status == STATUS_COMPLETED:
                 self._log("Flujo ejecutado correctamente.")
+                if self._guide:
+                    self._guide.finish(page)
 
         except Exception as error:
             result.status = STATUS_FAILED
@@ -193,6 +202,9 @@ class FlowRunner:
             self._save_result(run_folder, result)
             self._log_findings(result.findings)
             self._write_report(run_folder, result)
+            if self._guide:
+                self._save_json(run_folder / GUIDE_DATA_FILENAME, self._guide.to_dict())
+                self._write_guide(run_folder, result, flow_file)
             self._log("Navegador del flujo cerrado.")
 
         return result
@@ -220,10 +232,15 @@ class FlowRunner:
                     f"Paso {sequence} omitido: campo protegido sin dato de prueba "
                     "(agréguelo en data/test_data.json)."
                 )
+                self._capture_skipped_step(page, action, sequence)
                 return None
 
         target = self._get_frame(page, action.get("frame_url"))
         locator = self._get_locator(target, element)
+
+        # Antes del freno: la guía muestra también el botón donde se detiene.
+        if self._guide and action_type in {"click", "input", "change"}:
+            self._guide.capture_step(page, locator, action, sequence, value)
 
         if action_type == "click":
             blocked_step = self._blocked_step(locator, element, settings)
@@ -253,6 +270,19 @@ class FlowRunner:
         self._log(f"Paso {sequence}: {description}")
         return None
 
+    def _capture_skipped_step(self, page, action: dict, sequence: int) -> None:
+        """Un campo protegido sin dato de prueba no se llena, pero la guía lo explica igual."""
+
+        if not self._guide:
+            return
+        try:
+            target = self._get_frame(page, action.get("frame_url"))
+            locator = self._get_locator(target, action.get("element") or {})
+        except ValueError as error:
+            self._log(f"Guía: no se pudo capturar el paso {sequence}: {error}")
+            return
+        self._guide.capture_step(page, locator, action, sequence)
+
     def _check_page(self, auditor: PageAuditor, page, step: int, run_folder: Path) -> None:
         page_result = auditor.check_page(page, step)
         if page_result is not None:
@@ -277,6 +307,17 @@ class FlowRunner:
             self._log(f"No se pudo generar el reporte HTML: {error}")
             return
         self._log(f"Reporte HTML: {report_file}")
+
+    def _write_guide(self, run_folder: Path, result: FlowRunResult, flow_file: Path) -> None:
+        overrides_file = self.paths.guides_dir / f"{flow_file.stem}.json"
+        try:
+            guide_file = UserGuideGenerator().generate(run_folder, overrides_file)
+        except Exception as error:  # la guía no debe ocultar el resultado
+            self._log(f"No se pudo generar la guía de uso: {error}")
+            return
+        result.guide_file = str(guide_file)
+        self._save_result(run_folder, result)
+        self._log(f"Guía de uso: {guide_file} (textos editables en {overrides_file})")
 
     @staticmethod
     def _describe(action: dict) -> str:
