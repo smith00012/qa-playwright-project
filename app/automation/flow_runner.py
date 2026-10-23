@@ -30,6 +30,8 @@ STATUS_COMPLETED = "completado"
 STATUS_STOPPED = "detenido_por_seguridad"
 STATUS_FAILED = "fallido"
 
+TOGGLE_TYPES = {"checkbox", "radio"}
+INPUT_TYPE_SCRIPT = "element => (element.type || '').toLowerCase()"
 RUNTIME_TEXT_SCRIPT = """
 element => [
     element.innerText,
@@ -240,6 +242,10 @@ class FlowRunner:
         target = self._get_frame(page, action.get("frame_url"))
         locator = self._get_locator(target, element)
 
+        if self._is_toggle_change(action_type, element, locator):
+            self._log(f"Paso {sequence} omitido: la casilla ya cambió con el clic anterior.")
+            return None
+
         # Antes del freno: la guía muestra también el botón donde se detiene.
         if self._guide and action_type in {"click", "input", "change"}:
             self._guide.capture_step(page, locator, action, sequence, value)
@@ -271,6 +277,17 @@ class FlowRunner:
 
         self._log(f"Paso {sequence}: {description}")
         return None
+
+    @staticmethod
+    def _is_toggle_change(action_type: str, element: dict, locator: Locator) -> bool:
+        """
+        Al marcar una casilla, el navegador avisa un clic y además un change
+        con valor "on". El clic ya la marcó: repetirlo con fill falla.
+        """
+
+        if action_type != "change" or (element.get("tag") or "").lower() != "input":
+            return False
+        return locator.evaluate(INPUT_TYPE_SCRIPT, timeout=10000) in TOGGLE_TYPES
 
     def _capture_skipped_step(self, page, action: dict, sequence: int) -> None:
         """Un campo protegido sin dato de prueba no se llena, pero la guía lo explica igual."""

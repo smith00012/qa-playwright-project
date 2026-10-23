@@ -1,5 +1,6 @@
 import threading
 import queue
+from concurrent.futures import Future
 from typing import Callable, Optional
 
 from datetime import datetime
@@ -17,6 +18,7 @@ from app.storage.json_repository import JsonRepository
 
 START_TIMEOUT_SECONDS = 180
 PAGE_LOAD_TIMEOUT_MS = 60000
+COMMAND_TIMEOUT_SECONDS = 90
 
 
 def _first_line(error: Exception) -> str:
@@ -56,6 +58,9 @@ class BrowserRecorder:
 
         # Cola donde JavaScript deposita los eventos.
         self.event_queue = queue.Queue()
+
+        # Órdenes de otros hilos (por ejemplo, una IA) sobre la página.
+        self.command_queue = queue.Queue()
 
         # Control del hilo de Playwright.
         self.stop_event = threading.Event()
@@ -621,6 +626,8 @@ class BrowserRecorder:
 
                 self._process_pending_events()
 
+                self._run_pending_commands()
+
             # --------------------------------------------------
             # Procesamiento final
             # --------------------------------------------------
@@ -682,7 +689,58 @@ class BrowserRecorder:
 
         finally:
 
+            self._cancel_pending_commands()
             self._close_playwright()
+
+    # ==========================================================
+    # ÓRDENES DESDE OTROS HILOS
+    # ==========================================================
+
+    def run_in_browser(self, command: Callable, timeout: float = COMMAND_TIMEOUT_SECONDS):
+        """
+        Ejecuta command(page) en el hilo de Playwright y devuelve su
+        resultado. Lo que la orden haga en la página se graba igual que
+        si lo hiciera una persona.
+        """
+
+        if not self.worker_thread or not self.worker_thread.is_alive():
+            raise RuntimeError("La grabación no está activa.")
+
+        future: Future = Future()
+        self.command_queue.put((command, future))
+        return future.result(timeout=timeout)
+
+    def _run_pending_commands(self):
+
+        while True:
+
+            try:
+                command, future = self.command_queue.get_nowait()
+            except queue.Empty:
+                break
+
+            if not future.set_running_or_notify_cancel():
+                continue
+
+            try:
+                future.set_result(command(self.page))
+            except Exception as error:
+                future.set_exception(error)
+
+            # Los eventos que generó la orden se registran antes de la siguiente.
+            self._process_pending_events()
+
+    def _cancel_pending_commands(self):
+
+        while True:
+
+            try:
+                _command, future = self.command_queue.get_nowait()
+            except queue.Empty:
+                break
+
+            if future.set_running_or_notify_cancel():
+                future.set_exception(RuntimeError("La grabación terminó."))
 
     # ==========================================================
     # RECIBIR EVENTO DESDE JAVASCRIPT

@@ -8,11 +8,12 @@ from app.audit.page_checks import safe_url
 
 CAPTURE_TIMEOUT_MS = 10000
 
-# Lee lo que un usuario ve del elemento: su etiqueta visible y, en un
-# select, el texto de la opción que se va a elegir.
-ELEMENT_INFO_SCRIPT = """
-(element, value) => {
-    const clean = text => (text || "").replace(/\\s+/g, " ").trim();
+# Funciones de página compartidas con la grabación por IA: la etiqueta que
+# un usuario ve de un control y si se escribe en él.
+DESCRIBE_ELEMENT_JS = r"""
+const clean = text => (text || "").replace(/\s+/g, " ").trim();
+const NOT_TYPED = ["submit", "button", "checkbox", "radio", "reset", "image", "file"];
+function describeElement(element) {
     const withoutControls = node => {
         if (!node) return "";
         const copy = node.cloneNode(true);
@@ -25,7 +26,7 @@ ELEMENT_INFO_SCRIPT = """
         ? document.querySelector(`label[for="${CSS.escape(element.id)}"]`)
         : null;
     const labelledBy = (element.getAttribute("aria-labelledby") || "")
-        .split(/\\s+/)
+        .split(/\s+/)
         .filter(Boolean)
         .map(id => document.getElementById(id)?.textContent)
         .join(" ");
@@ -44,20 +45,27 @@ ELEMENT_INFO_SCRIPT = """
         element.getAttribute("alt"),
         image && image.alt,
     ];
-    const option = tag === "select"
-        ? [...element.options].find(item => item.value === value)
-        : null;
-    const notTyped = ["submit", "button", "checkbox", "radio", "reset", "image", "file"];
     return {
         label: candidates.map(clean).find(Boolean) || "",
         tag,
         type,
         role: element.getAttribute("role") || "",
-        option: option ? clean(option.text) : "",
         editable: tag === "textarea" || tag === "select" || element.isContentEditable
-            || (tag === "input" && !notTyped.includes(type)),
+            || (tag === "input" && !NOT_TYPED.includes(type)),
     };
 }
+"""
+
+# Lee lo que un usuario ve del elemento: su etiqueta visible y, en un
+# select, el texto de la opción que se va a elegir.
+ELEMENT_INFO_SCRIPT = f"""
+(element, value) => {{
+    {DESCRIBE_ELEMENT_JS}
+    const option = element.tagName.toLowerCase() === "select"
+        ? [...element.options].find(item => item.value === value)
+        : null;
+    return {{...describeElement(element), option: option ? clean(option.text) : ""}};
+}}
 """
 # Clics que no suelen cambiar lo que se ve: entrar a un campo o marcar una casilla.
 STAY_KINDS = {"field", "password", "select", "check"}

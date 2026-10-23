@@ -79,6 +79,19 @@ class FlowRunnerActionTests(unittest.TestCase):
         self.assertIsNone(stopped_at)
         self.assertEqual(calls, [("click",)])
 
+    def test_checkbox_change_after_click_is_not_filled(self):
+        action = {
+            "action_type": "change",
+            "value": "on",
+            "element": {"selector": "#terms", "tag": "INPUT"},
+        }
+
+        stopped_at, calls = self._run(action, GUARD_ON, runtime_text="checkbox")
+
+        self.assertIsNone(stopped_at)
+        self.assertEqual(calls, [])
+        self.assertIn("omitido", self.messages[-1])
+
     def test_masked_value_without_test_data_is_skipped(self):
         action = {
             "action_type": "input",

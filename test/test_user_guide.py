@@ -70,6 +70,15 @@ class StepTextTests(unittest.TestCase):
 
         self.assertEqual(shown, [2, 3, 4, 5])
 
+    def test_change_after_typing_in_same_field_is_dropped(self):
+        steps = [
+            step(1, "password", "Clave", action_type="input", target="#pass"),
+            step(2, "select", "Sede", action_type="change", target="#sede"),
+            step(3, "password", "Clave", action_type="change", target="#pass"),
+        ]
+
+        self.assertEqual([item["step"] for item in guide_steps(steps)], [1, 2])
+
     def test_element_kind(self):
         self.assertEqual(element_kind({"tag": "input", "type": "checkbox"}), "check")
         self.assertEqual(element_kind({"tag": "input", "type": "password", "editable": True}), "password")

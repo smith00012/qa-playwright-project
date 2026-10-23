@@ -53,6 +53,7 @@ data/
 - Cambiar los textos, la agrupación o el formato de la guía de uso: `app/reporting/user_guide.py`.
 - Cambiar los recuadros numerados de la guía: `app/evidence/step_markers.py`.
 - Cambiar lo que puede consultar o hacer una IA: `app/services/assistant_service.py` (reglas) y `app/mcp/server.py` (herramientas MCP).
+- Cambiar cómo graba una IA (controles que ve, clics, datos de prueba): `app/services/ai_recording.py`.
 - Cambiar qué archivos se crean al finalizar: `app/services/artifact_service.py`.
 - Cambiar carpetas de salida: `app/config.py`.
 - Cambiar persistencia JSON: `app/storage/json_repository.py`.
@@ -129,12 +130,19 @@ o agregue la entrada de `docs/examples/mcp.example.json` al `.mcp.json` del proy
 | `ver_captura` | Una captura de la corrida, por ejemplo `guia_001_pasos.png` |
 | `actualizar_textos_guia` | Cambia títulos, introducción, notas y textos de pasos en `data/guides/<flujo>.json` y regenera la guía; deja la versión anterior en `<flujo>.anterior.json` |
 | `generar_guia` | Reproduce un flujo en segundo plano y genera su guía (tarda varios minutos) |
+| `iniciar_grabacion` | Abre el navegador visible del grabador para que la IA haga un recorrido nuevo |
+| `ver_pantalla`, `captura_grabacion` | Controles de la pantalla con un número (tipo, etiqueta, opciones) y, si hace falta, una captura |
+| `hacer_clic`, `escribir`, `elegir_opcion` | Actúan sobre un control por su número; el grabador lo registra como si lo hiciera una persona |
+| `terminar_grabacion` | Cierra el navegador y guarda el flujo en `data/flows/` |
 
-Además trae dos prompts: `mejorar_guia` (redacta la guía mirando las capturas y la aplica cuando usted la aprueba) y `resumir_corrida` (resumen ejecutivo y técnico). En Claude Code aparecen como `/mcp__qa-test-recorder__mejorar_guia`.
+Además trae tres prompts: `grabar_flujo` (la IA hace el recorrido que le pide, avisando cada paso), `mejorar_guia` (redacta la guía mirando las capturas y la aplica cuando usted la aprueba) y `resumir_corrida` (resumen ejecutivo y técnico). En Claude Code aparecen como `/mcp__qa-test-recorder__mejorar_guia`.
 
 Reglas del adaptador:
 
-- Cuando la IA reproduce un flujo, el freno de pago queda **siempre activo**, aunque el ambiente lo desactive. Las pruebas de pago completas se hacen desde la app.
+- Cuando la IA reproduce o graba un flujo, el freno de pago queda **siempre activo**, aunque el ambiente lo desactive: la IA no puede pulsar un paso bloqueado. Las pruebas de pago completas se hacen desde la app.
+- Mientras la IA graba, usted puede intervenir en la misma ventana (un login, un captcha, un código o el paso bloqueado): lo que haga también se graba.
+- La IA escribe datos de prueba por referencia (`usar_dato_de_prueba`): la herramienta busca el valor del campo en `data/test_data.json` y la IA no lo ve. Para el resto inventa datos ficticios.
+- No hay teclas, atrás ni recargar: un flujo se reproduce paso por paso tal como se grabó.
 - Ningún valor de `data/test_data.json` llega a la IA: se reemplaza por `[DATO DE PRUEBA]` en todas las respuestas.
 - La IA solo abre archivos de `data/runs`, `data/flows` y `data/guides`, por nombre, nunca por ruta.
 - Las capturas se envían al proveedor de la IA. Pueden mostrar datos personales: use datos ficticios.

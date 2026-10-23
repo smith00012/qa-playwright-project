@@ -51,19 +51,26 @@ def default_step_text(step: dict) -> str:
 def guide_steps(steps: list[dict]) -> list[dict]:
     """
     Pasos que se muestran: quita el clic que el grabador guarda antes de
-    escribir en un campo, porque la instrucción de escribir ya lo incluye.
+    escribir en un campo, porque la instrucción de escribir ya lo incluye, y
+    el aviso de cambio que el navegador da al salir de un campo ya escrito.
     """
 
     shown = []
+    typed: set[str] = set()
     for step, following in zip(steps, steps[1:] + [None]):
+        target = step.get("target")
         if (
             following
             and step.get("action_type") == "click"
-            and step.get("target")
-            and step.get("target") == following.get("target")
+            and target
+            and target == following.get("target")
             and following.get("kind") in TYPED_KINDS
         ):
             continue
+        if step.get("action_type") == "change" and step.get("kind") in {"field", "password"} and target in typed:
+            continue
+        if step.get("action_type") == "input" and target:
+            typed.add(target)
         shown.append(step)
     return shown
 
