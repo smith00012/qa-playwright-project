@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "qa-test-recorder": {
+      "type": "stdio",
+      "command": "C:/ruta/al/proyecto/qa-playwright-project/.venv/Scripts/python.exe",
+      "args": ["C:/ruta/al/proyecto/qa-playwright-project/mcp_server.py"]
+    }
+  }
+}

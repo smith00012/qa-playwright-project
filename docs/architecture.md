@@ -10,6 +10,7 @@
 | `app/recorder/` | Browser event collection, sensitive-data sanitization, and conversion to QA actions |
 | `app/automation/` | Replay of recorded, site-agnostic flows, run settings per environment, browser and device options, step capture for the user guide |
 | `app/audit/` | Generic per-page checks during replay: console, network, accessibility (axe), load timings |
+| `app/mcp/` | MCP adapter for AI clients; only calls `AssistantService`, which owns the safety rules (stop guard forced on, test data redacted) |
 | `app/storage/` | JSON persistence and Excel matrix reading |
 | `app/evidence/` | Screenshot capture and evidence formatting |
 | `app/reporting/` | Word test cases, HTML run report, and the step-by-step user guide (HTML and Word) |

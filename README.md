@@ -52,6 +52,7 @@ data/
 - Cambiar qué se registra para la guía de uso: `app/automation/guide_capture.py`.
 - Cambiar los textos, la agrupación o el formato de la guía de uso: `app/reporting/user_guide.py`.
 - Cambiar los recuadros numerados de la guía: `app/evidence/step_markers.py`.
+- Cambiar lo que puede consultar o hacer una IA: `app/services/assistant_service.py` (reglas) y `app/mcp/server.py` (herramientas MCP).
 - Cambiar qué archivos se crean al finalizar: `app/services/artifact_service.py`.
 - Cambiar carpetas de salida: `app/config.py`.
 - Cambiar persistencia JSON: `app/storage/json_repository.py`.
@@ -101,6 +102,43 @@ En `revisiones` de `data/run_config.json` se puede apagar la accesibilidad, camb
 - Las capturas muestran lo que se escribió en pantallas anteriores (por ejemplo, el correo ya cargado). Use datos de prueba ficticios en `data/test_data.json` antes de compartir una guía.
 
 `guide.json` guarda los datos crudos (etiquetas, posiciones y capturas) y `guia_NNN_pasos.png`, las capturas marcadas.
+
+## Conexión con una IA (MCP)
+
+`mcp_server.py` expone la herramienta por MCP para que una IA (Claude Code, Claude Desktop u otro cliente MCP) lea corridas, mire las capturas y redacte las guías. Se instala aparte, porque el ejecutable de escritorio no lo necesita:
+
+```powershell
+python -m pip install -r requirements-mcp.txt
+```
+
+Para registrarlo en Claude Code (con rutas absolutas, desde cualquier carpeta):
+
+```powershell
+claude mcp add qa-test-recorder -- "C:\ruta\qa-playwright-project\.venv\Scripts\python.exe" "C:\ruta\qa-playwright-project\mcp_server.py"
+uta\qa-playwright-project\.venv\Scripts\python.exe" "C:
+uta\qa-playwright-project\mcp_server.py"
+```
+
+o agregue la entrada de `docs/examples/mcp.example.json` al `.mcp.json` del proyecto donde abre Claude Code.
+
+| Herramienta | Qué hace |
+| --- | --- |
+| `listar_flujos`, `listar_corridas` | Flujos grabados y reproducciones en `data/runs/` |
+| `leer_corrida` | Estado, paso fallido, error, tiempos, errores de red y consola agrupados y accesibilidad |
+| `leer_guia` | Pantallas, capturas y pasos de la guía con su texto actual |
+| `ver_captura` | Una captura de la corrida, por ejemplo `guia_001_pasos.png` |
+| `actualizar_textos_guia` | Cambia títulos, introducción, notas y textos de pasos en `data/guides/<flujo>.json` y regenera la guía; deja la versión anterior en `<flujo>.anterior.json` |
+| `generar_guia` | Reproduce un flujo en segundo plano y genera su guía (tarda varios minutos) |
+
+Además trae dos prompts: `mejorar_guia` (redacta la guía mirando las capturas y la aplica cuando usted la aprueba) y `resumir_corrida` (resumen ejecutivo y técnico). En Claude Code aparecen como `/mcp__qa-test-recorder__mejorar_guia`.
+
+Reglas del adaptador:
+
+- Cuando la IA reproduce un flujo, el freno de pago queda **siempre activo**, aunque el ambiente lo desactive. Las pruebas de pago completas se hacen desde la app.
+- Ningún valor de `data/test_data.json` llega a la IA: se reemplaza por `[DATO DE PRUEBA]` en todas las respuestas.
+- La IA solo abre archivos de `data/runs`, `data/flows` y `data/guides`, por nombre, nunca por ruta.
+- Las capturas se envían al proveedor de la IA. Pueden mostrar datos personales: use datos ficticios.
+- Las reglas propias del proyecto (por ejemplo, reglas de negocio que no son fallas) van en `data/instrucciones_ia.md`; hay un ejemplo en `docs/examples/`.
 
 La traza se abre con:
 

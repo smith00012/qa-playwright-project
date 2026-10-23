@@ -22,6 +22,7 @@ data/test_cases/
 data/report_target.json
 data/runs/
 data/guides/
+data/instrucciones_ia.md
 data/run_config.json
 data/test_data.json
 test_output/

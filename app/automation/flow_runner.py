@@ -65,6 +65,7 @@ class FlowRunResult:
     screenshot: str | None = None
     report_file: str | None = None
     guide_file: str | None = None
+    flow_id: str | None = None
 
 
 class FlowRunner:
@@ -119,6 +120,7 @@ class FlowRunner:
             total_steps=len(actions),
             run_folder=str(run_folder),
             started_at=datetime.now().isoformat(timespec="seconds"),
+            flow_id=flow_file.stem,
         )
         self.last_result = result
         started = time.monotonic()

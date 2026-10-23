@@ -1,0 +1,2 @@
+- No reportar como fallas las reglas de negocio del checkout: tarifas que solo aplican a ciertos correos, la ausencia de DNI como tipo de documento y el Carné de Extranjería de 7 dígitos.
+- Las guías son para alumnos y compradores de Educación Continua: tutear y evitar términos técnicos.
