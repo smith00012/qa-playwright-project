@@ -13,6 +13,7 @@ from app.browser_scripts import DISABLE_PRINT_SCRIPT
 from app.models.action import TestAction, ElementInfo
 from app.evidence.screenshot_manager import ScreenshotManager
 from app.recorder.sensitive_data import sanitize_event
+from app.automation.browser_options import DESKTOP, BrowserOptions, context_options
 from app.storage.json_repository import JsonRepository
 
 
@@ -42,11 +43,14 @@ class BrowserRecorder:
     def __init__(
         self,
         execution_folder: Path,
-        log_callback: Optional[Callable[[str], None]] = None
+        log_callback: Optional[Callable[[str], None]] = None,
+        device: str = DESKTOP,
     ):
 
         self.execution_folder = execution_folder
         self.log_callback = log_callback
+        # Escritorio o un teléfono del catálogo de Playwright (ver browser_options).
+        self.device = device
 
         self.screenshot_manager = ScreenshotManager(
             execution_folder
@@ -154,8 +158,13 @@ class BrowserRecorder:
                 headless=False
             )
 
+            # Un teléfono se emula completo (tamaño, densidad, user-agent
+            # móvil y pantalla táctil): el sitio lo trata como un celular.
             self.page = self.browser.new_page(
-                viewport={"width": 1440, "height": 980}
+                **context_options(
+                    BrowserOptions(device=self.device),
+                    self.playwright.devices,
+                )
             )
 
             # --------------------------------------------------
@@ -456,7 +465,8 @@ class BrowserRecorder:
                     function sendEvent(
                         type,
                         element,
-                        value = null
+                        value = null,
+                        extra = {}
                     ) {
 
                         try {
@@ -473,7 +483,8 @@ class BrowserRecorder:
                                     value: value,
                                     // URL al momento del evento: al
                                     // procesarlo, un clic ya pudo navegar.
-                                    url: window.location.href
+                                    url: window.location.href,
+                                    ...extra
                                 });
                             }
 
@@ -576,10 +587,24 @@ class BrowserRecorder:
                                 }
                             }
 
+                            // En una lista se guarda también el texto de la
+                            // opción: su valor puede ser un id que cambia.
+                            const optionLabel =
+                                element &&
+                                element.tagName === "SELECT" &&
+                                element.selectedIndex >= 0
+                                    ? element.options[
+                                          element.selectedIndex
+                                      ].text.trim()
+                                    : null;
+
                             sendEvent(
                                 "change",
                                 element,
-                                value
+                                value,
+                                optionLabel
+                                    ? { option_label: optionLabel }
+                                    : {}
                             );
 
                         },
@@ -867,6 +892,8 @@ class BrowserRecorder:
             ),
 
             frame_url=event.get("frame_url"),
+
+            option_label=event.get("option_label"),
 
             element=element,
 

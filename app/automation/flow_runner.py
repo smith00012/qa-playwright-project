@@ -32,6 +32,15 @@ STATUS_FAILED = "fallido"
 
 TOGGLE_TYPES = {"checkbox", "radio"}
 INPUT_TYPE_SCRIPT = "element => (element.type || '').toLowerCase()"
+# Un aviso modal abierto (<dialog open>) bloquea el resto de la página, igual que a una persona.
+INSIDE_MODAL_SCRIPT = "element => Boolean(element.closest('dialog[open]'))"
+NO_MODAL_SCRIPT = "() => !document.querySelector('dialog[open]')"
+MODAL_WAIT_MS = 10000
+# Tras un clic, lo que dispara (guardar, validar un QR) termina antes del siguiente paso.
+SETTLE_AFTER_CLICK_MS = 5000
+SETTLE_GRACE_MS = 150  # para que salgan las peticiones del clic
+SETTLE_POLL_MS = 100
+HAS_OPTION_SCRIPT = "(element, value) => [...element.options].some(option => option.value === value)"
 RUNTIME_TEXT_SCRIPT = """
 element => [
     element.innerText,
@@ -88,6 +97,7 @@ class FlowRunner:
         self.guide = guide
         self.last_result: FlowRunResult | None = None
         self._guide: GuideCapture | None = None
+        self._inflight = 0  # peticiones de la página sin respuesta
 
     def _log(self, message: str) -> None:
         if self.log_callback:
@@ -156,6 +166,7 @@ class FlowRunner:
 
             page = context.new_page()
             auditor.attach(page)
+            self._track_requests(page)
             page.goto(start_url, wait_until="domcontentloaded")
             self._log(f"Página inicial: {start_url}")
             self._check_page(auditor, page, 0, run_folder)
@@ -227,7 +238,8 @@ class FlowRunner:
         value = action.get("value")
         description = action.get("description") or action_type
 
-        if action_type in {"input", "change"}:
+        # Un valor que escribió la IA (dato ficticio del propio flujo) se repite tal cual.
+        if action_type in {"input", "change"} and not action.get("fixed_value"):
             test_value = find_test_value(element, settings.test_data)
             if test_value is not None:
                 value = test_value
@@ -246,6 +258,8 @@ class FlowRunner:
             self._log(f"Paso {sequence} omitido: la casilla ya cambió con el clic anterior.")
             return None
 
+        self._wait_for_modal_to_close(target, locator)
+
         # Antes del freno: la guía muestra también el botón donde se detiene.
         if self._guide and action_type in {"click", "input", "change"}:
             self._guide.capture_step(page, locator, action, sequence, value)
@@ -259,13 +273,14 @@ class FlowRunner:
                 )
                 return blocked_step
             locator.click(timeout=10000)
+            self._settle(page)
 
         elif action_type == "input":
             locator.fill(value or "")
 
         elif action_type == "change":
             if element.get("tag", "").lower() == "select":
-                locator.select_option(value or "")
+                self._select_option(locator, value or "", action.get("option_label"))
             else:
                 locator.fill(value or "")
 
@@ -277,6 +292,62 @@ class FlowRunner:
 
         self._log(f"Paso {sequence}: {description}")
         return None
+
+    def _track_requests(self, page) -> None:
+        self._inflight = 0
+
+        def started(_request):
+            self._inflight += 1
+
+        def ended(_request):
+            self._inflight = max(0, self._inflight - 1)
+
+        page.on("request", started)
+        page.on("requestfinished", ended)
+        page.on("requestfailed", ended)
+
+    def _settle(self, page) -> None:
+        """
+        Espera a que respondan las peticiones que disparó el clic: si no, el
+        aviso con su resultado aparece en medio del paso siguiente y lo tapa.
+        (wait_for_load_state("networkidle") no sirve: se da por cumplido si
+        la página ya estuvo inactiva una vez.)
+        """
+
+        page.wait_for_timeout(SETTLE_GRACE_MS)
+        deadline = time.monotonic() + SETTLE_AFTER_CLICK_MS / 1000
+        while self._inflight and time.monotonic() < deadline:
+            page.wait_for_timeout(SETTLE_POLL_MS)
+        if not self._inflight:
+            page.wait_for_timeout(SETTLE_POLL_MS)  # lo que muestra la respuesta
+
+    @staticmethod
+    def _wait_for_modal_to_close(target, locator: Locator) -> None:
+        """
+        Al grabar, los avisos que se cierran solos (por ejemplo, «Usuario
+        creado») ya no estaban cuando llegó el siguiente paso; al reproducir
+        va más rápido. Si el paso es fuera del aviso, espera a que se cierre.
+        """
+
+        if locator.evaluate(INSIDE_MODAL_SCRIPT, timeout=10000):
+            return
+        try:
+            target.wait_for_function(NO_MODAL_SCRIPT, timeout=MODAL_WAIT_MS)
+        except PlaywrightError:
+            pass  # un aviso que no se cierra solo: el paso lo intenta igual
+
+    @staticmethod
+    def _select_option(locator: Locator, value: str, label: str | None) -> None:
+        """
+        Elige por valor; si ese valor ya no existe, por el texto de la opción.
+        Pasa con listas de registros que el flujo crea: en cada reproducción
+        tienen otro id, pero el mismo nombre.
+        """
+
+        if label and not locator.evaluate(HAS_OPTION_SCRIPT, value, timeout=10000):
+            locator.select_option(label=label)
+        else:
+            locator.select_option(value)
 
     @staticmethod
     def _is_toggle_change(action_type: str, element: dict, locator: Locator) -> bool:

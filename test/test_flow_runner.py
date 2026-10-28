@@ -5,15 +5,22 @@ from app.automation.run_settings import RunSettings
 
 
 class FakeLocator:
-    def __init__(self, runtime_text: str = ""):
+    def __init__(self, runtime_text: str = "", options: tuple[str, ...] = ()):
         self.runtime_text = runtime_text
+        self.options = options
+        self.inside_modal = False
+        self.modal_waits = 0
         self.calls: list[tuple] = []
 
     @property
     def first(self):
         return self
 
-    def evaluate(self, _script, timeout=None):
+    def evaluate(self, script, arg=None, timeout=None):
+        if arg is not None:
+            return arg in self.options
+        if "closest('dialog[open]')" in script:
+            return self.inside_modal
         return self.runtime_text
 
     def click(self, timeout=None):
@@ -22,8 +29,8 @@ class FakeLocator:
     def fill(self, value):
         self.calls.append(("fill", value))
 
-    def select_option(self, value):
-        self.calls.append(("select_option", value))
+    def select_option(self, value=None, label=None):
+        self.calls.append(("select_option", value) if label is None else ("select_label", label))
 
 
 class FakePage:
@@ -32,6 +39,12 @@ class FakePage:
 
     def locator(self, _selector):
         return self._locator
+
+    def wait_for_timeout(self, _ms):
+        pass
+
+    def wait_for_function(self, _script, timeout=None):
+        self._locator.modal_waits += 1
 
 
 GUARD_ON = RunSettings(stop_guard=True, blocked_steps=("Continuar al pago",))
@@ -43,8 +56,14 @@ class FlowRunnerActionTests(unittest.TestCase):
         self.messages: list[str] = []
         self.runner = FlowRunner(self.messages.append)
 
-    def _run(self, action: dict, settings: RunSettings, runtime_text: str = ""):
-        locator = FakeLocator(runtime_text)
+    def _run(
+        self,
+        action: dict,
+        settings: RunSettings,
+        runtime_text: str = "",
+        options: tuple[str, ...] = (),
+    ):
+        locator = FakeLocator(runtime_text, options)
         stopped_at = self.runner._run_action(FakePage(locator), action, 1, settings)
         return stopped_at, locator.calls
 
@@ -123,6 +142,45 @@ class FlowRunnerActionTests(unittest.TestCase):
 
         self.assertEqual(masked_calls, [("fill", "clave-qa")])
         self.assertEqual(recorded_calls, [("fill", "qa@example.test")])
+
+    def test_value_typed_by_ai_is_not_replaced_by_test_data(self):
+        settings = RunSettings(test_data={"#password": "clave-admin"})
+        action = {
+            "action_type": "change",
+            "element": {"tag": "INPUT", "selector": "#password"},
+            "value": "Clave-Supervisora-1",
+            "fixed_value": True,
+        }
+
+        _, calls = self._run(action, settings)
+
+        self.assertEqual(calls, [("fill", "Clave-Supervisora-1")])
+
+    def test_select_uses_label_when_recorded_value_no_longer_exists(self):
+        action = {
+            "action_type": "change",
+            "element": {"tag": "SELECT", "selector": "#v-bus"},
+            "value": "id-de-la-grabacion",
+            "option_label": "Bus 01 · BUS-701",
+        }
+
+        _, missing = self._run(action, GUARD_OFF, options=("id-nuevo",))
+        _, present = self._run(action, GUARD_OFF, options=("id-de-la-grabacion",))
+
+        self.assertEqual(missing, [("select_label", "Bus 01 · BUS-701")])
+        self.assertEqual(present, [("select_option", "id-de-la-grabacion")])
+
+    def test_waits_for_open_notice_before_acting_outside_it(self):
+        action = {"action_type": "click", "element": {"selector": "#salir", "text": "Salir"}}
+        outside = FakeLocator()
+        inside = FakeLocator()
+        inside.inside_modal = True
+
+        self.runner._run_action(FakePage(outside), action, 1, GUARD_OFF)
+        self.runner._run_action(FakePage(inside), action, 1, GUARD_OFF)
+
+        self.assertEqual((outside.modal_waits, inside.modal_waits), (1, 0))
+        self.assertEqual(outside.calls, [("click",)])
 
     def test_test_values_are_not_written_to_log(self):
         settings = RunSettings(test_data={"password": "clave-qa"})

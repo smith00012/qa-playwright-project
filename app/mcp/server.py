@@ -164,15 +164,23 @@ def generar_guia(
 
 
 @server.tool(annotations=ToolAnnotations(destructiveHint=False, openWorldHint=True))
-def iniciar_grabacion(url: str, nombre: str, ambiente: str | None = None) -> dict:
+def iniciar_grabacion(
+    url: str,
+    nombre: str,
+    ambiente: str | None = None,
+    dispositivo: str = "Escritorio",
+) -> dict:
     """
     Abre un navegador visible en la URL y empieza a grabar un flujo nuevo.
     El ambiente elige los datos de prueba; el freno de pago queda activo
     igual. Abrir el navegador puede tardar hasta un minuto.
+    Dispositivos: Escritorio, iPhone 13, Pixel 7, iPad (gen 7). Un teléfono se
+    emula completo (user-agent móvil y táctil); reproduce luego con el mismo
+    dispositivo en generar_guia, porque el sitio cambia de diseño.
     """
 
     _keep_prints_off_the_wire()
-    return service.redact(_answer(recording.start, url, nombre, ambiente))
+    return service.redact(_answer(recording.start, url, nombre, ambiente, dispositivo))
 
 
 @server.tool(annotations=READ_ONLY)

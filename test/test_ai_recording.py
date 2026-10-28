@@ -4,7 +4,12 @@ import unittest
 from pathlib import Path
 
 from app.config import AppPaths
-from app.services.ai_recording import GUARD_INFO_SCRIPT, AiRecordingError, AiRecordingSession
+from app.services.ai_recording import (
+    GUARD_INFO_SCRIPT,
+    AiRecordingError,
+    AiRecordingSession,
+    mark_ai_typed_values,
+)
 
 
 class FakeLocator:
@@ -52,8 +57,9 @@ class FakePage:
 
 
 class FakeRecorder:
-    def __init__(self, execution_folder, log_callback=None):
+    def __init__(self, execution_folder, log_callback=None, device="Escritorio"):
         self.execution_folder = execution_folder
+        self.device = device
         self.stopped = False
 
     def start(self, url):
@@ -144,6 +150,35 @@ class AiRecordingSessionTests(unittest.TestCase):
         self.session.start("https://site", "Ingreso")
         with self.assertRaises(AiRecordingError):
             self.session.start("https://site", "Otro")
+
+    def test_values_typed_by_ai_are_marked_fixed_and_test_data_is_not(self):
+        password = {"selector": "#password", "id": "password"}
+        actions = [
+            {"sequence": 1, "action_type": "input", "element": password, "value": "[MASKED]"},
+            {"sequence": 2, "action_type": "click", "element": {"text": "Ingresar"}},
+            {"sequence": 3, "action_type": "input", "element": password, "value": "[MASKED]"},
+            {"sequence": 4, "action_type": "change", "element": password, "value": "[MASKED]"},
+        ]
+        # 1: dato de prueba (administrador); 3-4: la clave que la IA escribió para otro usuario.
+        writes = [(0, {"selector": "#password"}, None), (2, {"selector": "#password"}, "Clave-Chofer-26")]
+
+        mark_ai_typed_values(actions, writes)
+
+        self.assertNotIn("fixed_value", actions[0])
+        self.assertEqual(actions[0]["value"], "[MASKED]")
+        self.assertEqual(
+            [(a["value"], a.get("fixed_value")) for a in actions[2:]],
+            [("Clave-Chofer-26", True), ("Clave-Chofer-26", True)],
+        )
+
+    def test_recording_opens_the_chosen_phone_and_rejects_unknown_devices(self):
+        answer = self.session.start("https://site", "Celular", device="Pixel 7")
+
+        self.assertEqual(answer["dispositivo"], "Pixel 7")
+        self.assertEqual(self.session.recorder.device, "Pixel 7")
+        self.session.finish(save=False)
+        with self.assertRaises(AiRecordingError):
+            self.session.start("https://site", "Celular", device="Nokia 3310")
 
     def test_finish_saves_flow(self):
         self.session.start("https://site", "Ingreso demo")

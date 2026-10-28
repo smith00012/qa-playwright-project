@@ -26,6 +26,9 @@ class TestAction:
     # URL del iframe cuando la acción ocurre dentro de uno (por ejemplo,
     # los campos de tarjeta de una pasarela de pago).
     frame_url: str | None = None
+    # Texto de la opción elegida en una lista: si su valor cambia al
+    # reproducir (un id nuevo), se elige por este texto.
+    option_label: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)

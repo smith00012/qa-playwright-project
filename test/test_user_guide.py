@@ -228,6 +228,12 @@ class FakePage:
     def locator(self, _selector):
         return FakeLocator()
 
+    def wait_for_timeout(self, _ms):
+        pass
+
+    def wait_for_function(self, _script, timeout=None):
+        pass
+
 
 class FlowRunnerGuideTests(unittest.TestCase):
     def test_blocked_step_is_documented_but_not_clicked(self):

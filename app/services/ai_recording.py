@@ -1,3 +1,4 @@
+import json
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -6,6 +7,7 @@ from typing import Callable, Optional
 from playwright.sync_api import Error as PlaywrightError
 
 from app.audit.page_checks import safe_url
+from app.automation.browser_options import DESKTOP, DEVICE_PRESETS
 from app.automation.guide_capture import DESCRIBE_ELEMENT_JS, element_kind
 from app.automation.run_settings import find_test_value, load_run_settings, matching_blocked_step
 from app.config import AppPaths, DEFAULT_PATHS
@@ -91,6 +93,39 @@ element => ({
 """
 
 
+def mark_ai_typed_values(actions: list[dict], writes: list[tuple[int, dict, str | None]]) -> None:
+    """
+    Marca con fixed_value los valores que la IA escribió a mano: son datos
+    ficticios del flujo (por ejemplo, la contraseña de un usuario que el mismo
+    flujo crea) y al reproducir no se reemplazan por datos de prueba. Así un
+    campo #password que se usa para varios usuarios repite el valor de cada uno.
+
+    writes: (acciones registradas antes de escribir, campo, texto o None si
+    fue un dato de prueba). Cada evento del campo toma la escritura más
+    reciente anterior a él.
+    """
+
+    for action in actions:
+        if action.get("action_type") not in {"input", "change"}:
+            continue
+        element = action.get("element") or {}
+        sequence = action.get("sequence") or 0
+        latest = None
+        for before, field, text in writes:
+            if before < sequence and _same_field(element, field):
+                latest = text
+        if latest is not None:
+            action["value"] = latest
+            action["fixed_value"] = True
+
+
+def _same_field(element: dict, field: dict) -> bool:
+    for key in ("selector", "id", "name"):
+        if element.get(key) or field.get(key):
+            return element.get(key) == field.get(key)
+    return False
+
+
 class AiRecordingError(ValueError):
     """Un pedido de la IA que no se puede cumplir; el mensaje dice cómo seguir."""
 
@@ -121,29 +156,41 @@ class AiRecordingSession:
         self.name = ""
         self.settings = None
         self._frames: dict[str, object] = {}
+        # Escrituras de la IA, para marcar al guardar cuáles son valores fijos.
+        self._writes: list[tuple[int, dict, str | None]] = []
 
     @property
     def active(self) -> bool:
         return self.recorder is not None
 
-    def start(self, url: str, name: str, environment: str | None = None) -> dict:
+    def start(
+        self,
+        url: str,
+        name: str,
+        environment: str | None = None,
+        device: str = DESKTOP,
+    ) -> dict:
         if self.active:
             raise AiRecordingError("Ya hay una grabación en curso. Termínala con terminar_grabacion.")
         if not url.startswith(("http://", "https://")):
             raise AiRecordingError("La URL debe empezar con http:// o https://.")
         if not name.strip():
             raise AiRecordingError("Indica un nombre para el flujo.")
+        if device not in DEVICE_PRESETS:
+            raise AiRecordingError(f"Dispositivo no soportado. Usa uno de: {', '.join(DEVICE_PRESETS)}.")
 
         self.settings = load_run_settings(environment, self.paths)
         execution_folder = self.paths.execution_dir(datetime.now().strftime("%Y%m%d_%H%M%S"))
         execution_folder.mkdir(parents=True, exist_ok=True)
-        recorder = self.recorder_factory(execution_folder, log_callback=self.log_callback)
+        recorder = self.recorder_factory(execution_folder, log_callback=self.log_callback, device=device)
         recorder.start(url)
         self.recorder = recorder
         self.name = name.strip()
+        self._writes = []
         return {
             "grabando": True,
             "flujo": self.name,
+            "dispositivo": device,
             "ambiente": self.settings.environment,
             "pasos_bloqueados": list(self.settings.blocked_steps),
             "siguiente": "Llama a ver_pantalla para ver los controles disponibles.",
@@ -189,16 +236,17 @@ class AiRecordingSession:
         def command(page):
             locator = self._locate(ref)
             value = text
+            field = locator.evaluate(FIELD_INFO_SCRIPT, timeout=ACTION_TIMEOUT_MS)
             if use_test_data:
-                value = find_test_value(
-                    locator.evaluate(FIELD_INFO_SCRIPT, timeout=ACTION_TIMEOUT_MS),
-                    self.settings.test_data,
-                )
+                value = find_test_value(field, self.settings.test_data)
                 if value is None:
                     raise AiRecordingError(
                         "No hay dato de prueba para este campo en data/test_data.json. "
                         "Pide a la persona que lo agregue o que lo escriba en la ventana."
                     )
+            # Los eventos de esta escritura llegan después de las acciones ya registradas.
+            before = len(getattr(self.recorder, "actions", []))
+            self._writes.append((before, field, None if use_test_data else text))
             locator.fill(value, timeout=ACTION_TIMEOUT_MS)
             page.wait_for_timeout(300)
             return {"ok": True, "escrito": "[DATO DE PRUEBA]" if use_test_data else value}
@@ -230,6 +278,8 @@ class AiRecordingSession:
             shutil.rmtree(execution_folder, ignore_errors=True)
             return {"guardado": False}
 
+        self._mark_fixed_values(execution_folder / "actions.json")
+
         artifacts = TestArtifactService(self.paths, self.log_callback)
         flow_file = artifacts.save_flow(execution_folder, flow_name=self.name)
         if flow_file is None:
@@ -242,6 +292,14 @@ class AiRecordingSession:
             "pasos": [action.get("description") for action in qa_actions],
             "siguiente": "Puedes generar su guía con generar_guia.",
         }
+
+    def _mark_fixed_values(self, actions_file: Path) -> None:
+        if not self._writes or not actions_file.exists():
+            return
+        actions = json.loads(actions_file.read_text(encoding="utf-8"))
+        mark_ai_typed_values(actions, self._writes)
+        actions_file.write_text(json.dumps(actions, ensure_ascii=False, indent=2), encoding="utf-8")
+        self._writes = []
 
     # ----------------------------------------------------------
     # En el hilo del navegador
